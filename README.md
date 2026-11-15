@@ -1,6 +1,6 @@
 # gold-forever-daten
 
-Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die Blizzard Game Data API abgerufen, von GitHub Actions (`.github/workflows/ah.yml`, jede Stunde um Minute 23 UTC) gesammelt und hier gespeichert. Gold Forever (Pipeline + Web-App) liest sie von hier.
+Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die Blizzard Game Data API abgerufen, von GitHub Actions (`.github/workflows/ah.yml`, jede Stunde um Minute 37 UTC; Blizzard aktualisiert die Daten etwa zu Minute 19) gesammelt und hier gespeichert. Gold Forever (Pipeline + Web-App) liest sie von hier.
 
 ## Einrichtung
 - Repo-Secrets: `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET` (develop.battle.net).

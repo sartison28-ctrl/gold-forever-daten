@@ -2,7 +2,7 @@ name: Auktionshaus sammeln
 
 on:
   schedule:
-    - cron: "23 * * * *"   # stündlich, Minute 23 (UTC)
+    - cron: "37 * * * *"   # stündlich, Minute 37 UTC (Blizzard aktualisiert ca. Minute 19)
   workflow_dispatch: {}
 
 permissions:

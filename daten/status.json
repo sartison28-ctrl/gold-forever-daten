@@ -1,0 +1,51 @@
+{
+ "letzter_lauf": "2026-11-15T18:54Z",
+ "ruleset": 1,
+ "haeuser": {
+  "113": {
+   "name": "Auktionshaus der Horde",
+   "zeit": "2026-11-15T18:54Z",
+   "last_modified": "Sun, 15 Nov 2026 18:19:39 GMT",
+   "auktionen": 342417,
+   "stueck": 2809570,
+   "items": 6582,
+   "verkauf_schaetzung": null
+  },
+  "114": {
+   "name": "Auktionshaus der Horde",
+   "zeit": "2026-11-15T18:54Z",
+   "last_modified": "Sun, 15 Nov 2026 18:19:36 GMT",
+   "auktionen": 303599,
+   "stueck": 2468776,
+   "items": 6439,
+   "verkauf_schaetzung": null
+  },
+  "115": {
+   "name": "Auktionshaus der Horde",
+   "zeit": "2026-11-15T18:54Z",
+   "last_modified": "Sun, 15 Nov 2026 18:18:48 GMT",
+   "auktionen": 0,
+   "stueck": 0,
+   "items": 0,
+   "verkauf_schaetzung": null
+  },
+  "120": {
+   "name": "Auktionshaus der Horde",
+   "zeit": "2026-11-15T18:54Z",
+   "last_modified": "Sun, 15 Nov 2026 18:18:53 GMT",
+   "auktionen": 30971,
+   "stueck": 189886,
+   "items": 2902,
+   "verkauf_schaetzung": null
+  },
+  "124": {
+   "name": "Auktionshaus der Horde",
+   "zeit": "2026-11-15T18:54Z",
+   "last_modified": "Sun, 15 Nov 2026 18:18:54 GMT",
+   "auktionen": 37575,
+   "stueck": 221880,
+   "items": 3471,
+   "verkauf_schaetzung": null
+  }
+ }
+}

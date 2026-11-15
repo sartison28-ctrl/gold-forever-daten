@@ -25,6 +25,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from email.utils import parsedate_to_datetime
 
 BASIS = os.path.dirname(os.path.abspath(__file__))
 KONFIG = json.load(open(os.path.join(BASIS, "konfig.json"), encoding="utf-8"))
@@ -232,7 +233,8 @@ def zusammenfassen(liste, vorher, zeit, luecke):
         e = items.get(item, {"stueck": 0, "auktionen": 0, "ohne": 0, "preise": []})
         p = sorted(e["preise"])
         w = weg.get(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0})
-        schaetz = w["L"] + w["T"] + w["M"] // 2 if (vorher is not None and not luecke) else ""
+        # MEDIUM (30 Min–2 Std) enthält auch Ablauf von 2-Std-Auktionen -> nicht mitzählen
+        schaetz = w["L"] + w["T"] if (vorher is not None and not luecke) else ""
         if p:
             mn = p[0][0]
             bis5 = sum(m for pr, m in p if pr <= mn * 1.05)
@@ -338,8 +340,15 @@ def main():
             continue
         luecke = True
         if vorher:
-            alt = dt.datetime.strptime(vorher["zeit"], "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc)
-            luecke = (jetzt - alt) > dt.timedelta(minutes=KONFIG.get("max_abstand_min", 100))
+            # Abstand der Blizzard-Datenstände (Last-Modified), sonst der Laufzeiten
+            try:
+                abstand = parsedate_to_datetime(lm) - parsedate_to_datetime(vorher["last_modified"])
+            except (TypeError, ValueError, KeyError):
+                alt = dt.datetime.strptime(vorher["zeit"], "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc)
+                abstand = jetzt - alt
+            luecke = abstand > dt.timedelta(minutes=KONFIG.get("max_abstand_min", 75))
+            if luecke:
+                log(f"Haus {hid}: Abstand zum Vorstand {abstand} – keine Verkaufsschätzung")
         zeilen = zusammenfassen(liste, vorher["auktionen"] if vorher else None, zeit, luecke)
         csv_schreiben(hid, zeilen, tag)
         zustand_speichern(hid, liste, zeit, lm)

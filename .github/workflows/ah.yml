@@ -2,7 +2,8 @@ name: Auktionshaus sammeln
 
 on:
   schedule:
-    - cron: "37 * * * *"   # stündlich, Minute 37 UTC (Blizzard aktualisiert ca. Minute 19)
+    - cron: "37 * * * *"   # Minute 37 UTC (Blizzard aktualisiert ca. Minute 19)
+    - cron: "7 * * * *"    # Reserve: GitHub verspätet Zeitpläne oft um 30–60 Min; unveränderte Stände werden übersprungen
   workflow_dispatch: {}
 
 permissions:

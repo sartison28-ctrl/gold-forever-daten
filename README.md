@@ -1,6 +1,6 @@
 # gold-forever-daten
 
-Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die Blizzard Game Data API abgerufen, von GitHub Actions (`.github/workflows/ah.yml`, jede Stunde um Minute 37 UTC; Blizzard aktualisiert die Daten etwa zu Minute 19) gesammelt und hier gespeichert. Gold Forever (Pipeline + Web-App) liest sie von hier.
+Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die Blizzard Game Data API abgerufen, von GitHub Actions (`.github/workflows/ah.yml`, jede Stunde um Minute 37 UTC, als Reserve zusätzlich um Minute 7; Blizzard aktualisiert die Daten etwa zu Minute 19) gesammelt und hier gespeichert. Gold Forever (Pipeline + Web-App) liest sie von hier.
 
 ## Einrichtung
 - Repo-Secrets: `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET` (develop.battle.net).
@@ -35,11 +35,11 @@ Die Rohdaten (kompakte Auktionsliste je Stunde) liegen nicht im Git. Sie werden 
 | `weg_mittel` | verschwunden, Restzeit war MEDIUM (verkauft oder abgelaufen) |
 | `weg_kurz` | verschwunden, Restzeit war SHORT → meist abgelaufen |
 | `teilverkauf` | Rohstoffe: Menge einer weiterhin vorhandenen Auktion gesunken |
-| `verkauf_schaetzung` | `weg_lang + teilverkauf + weg_mittel/2` |
+| `verkauf_schaetzung` | `weg_lang + teilverkauf` (vorsichtig: `weg_mittel` enthält auch abgelaufene 2-Std-Auktionen; zurückgezogene Auktionen ohne Neueinstellung gleicher Stückzahl sind weiter enthalten) |
 | `neu_stueck` | seit der Vorstunde neu eingestellte Stück (einschließlich umgestellter) |
 | `umgestellt` | Stück, die zurückgezogen und neu eingestellt wurden: Eine verschwundene Auktion wird einer neuen Auktion desselben Items mit gleicher Stückzahl zugeordnet. Diese Stück zählen nicht als Verkauf |
 
-Die Spalten `weg_*`, `teilverkauf`, `verkauf_schaetzung`, `neu_stueck` und `umgestellt` sind leer, wenn es keine passende Vorstunde gibt (erster Lauf oder mehr als 130 Minuten Abstand). Hat sich der Datenstand laut `Last-Modified` seit dem letzten Lauf nicht geändert, wird keine Zeile geschrieben.
+Die Spalten `weg_*`, `teilverkauf`, `verkauf_schaetzung`, `neu_stueck` und `umgestellt` sind leer, wenn es keine passende Vorstunde gibt (erster Lauf oder mehr als 75 Minuten zwischen den Blizzard-Datenständen laut `Last-Modified`). Hat sich der Datenstand laut `Last-Modified` seit dem letzten Lauf nicht geändert, wird keine Zeile geschrieben.
 
 ## Test
 `python test/test_sammeln.py` (offline, mit simulierter API).

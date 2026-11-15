@@ -39,6 +39,7 @@ SPALTEN = [
     "zeit_utc", "item_id", "stueck", "auktionen", "stueck_ohne_sofortkauf",
     "min", "p10", "p25", "median", "stueck_bis_5pct",
     "weg_lang", "weg_mittel", "weg_kurz", "teilverkauf", "verkauf_schaetzung", "neu_stueck",
+    "umgestellt",
 ]
 GESPEICHERT_TIME_LEFT = {"SHORT": "S", "MEDIUM": "M", "LONG": "L", "VERY_LONG": "V"}
 
@@ -195,27 +196,42 @@ def zusammenfassen(liste, vorher, zeit, luecke):
             e["preise"].append((preis, menge))
 
     # Verkaufsschätzung aus dem Vergleich mit der Vorstunde
+    # Zurückgezogen + neu eingestellt (Unterbieten) darf nicht als Verkauf zählen:
+    # Verschwundene Auktion und neue Auktion desselben Items mit gleicher Stückzahl
+    # gelten als Paar "umgestellt" (zuerst gegen LONG, dann MEDIUM, dann SHORT).
     weg = {}
     neu = {}
     if vorher is not None and not luecke:
         jetzt_ids = {a[0]: a for a in liste}
+        verschwunden = {}  # item -> {menge: {"L": n, "M": n, "S": n}}
         for aid, (item, menge, tl) in vorher.items():
             akt = jetzt_ids.get(aid)
-            w = weg.setdefault(item, {"L": 0, "M": 0, "S": 0, "T": 0})
+            w = weg.setdefault(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0})
             if akt is None:
                 klasse = "S" if tl == "S" else ("M" if tl == "M" else "L")
                 w[klasse] += menge
+                k = verschwunden.setdefault(item, {}).setdefault(menge, {"L": 0, "M": 0, "S": 0})
+                k[klasse] += 1
             elif akt[2] < menge:  # Teilverkauf (Rohstoffe)
                 w["T"] += menge - akt[2]
         for aid, item, menge, _, _ in liste:
             if aid not in vorher:
                 neu[item] = neu.get(item, 0) + menge
+                k = verschwunden.get(item, {}).get(menge)
+                if k:
+                    for klasse in ("L", "M", "S"):
+                        if k[klasse]:
+                            k[klasse] -= 1
+                            w = weg[item]
+                            w[klasse] -= menge
+                            w["U"] += menge
+                            break
 
     zeilen = []
     for item in sorted(set(items) | set(weg)):
         e = items.get(item, {"stueck": 0, "auktionen": 0, "ohne": 0, "preise": []})
         p = sorted(e["preise"])
-        w = weg.get(item, {"L": 0, "M": 0, "S": 0, "T": 0})
+        w = weg.get(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0})
         schaetz = w["L"] + w["T"] + w["M"] // 2 if (vorher is not None and not luecke) else ""
         if p:
             mn = p[0][0]
@@ -228,7 +244,8 @@ def zusammenfassen(liste, vorher, zeit, luecke):
         zeilen.append([zeit, item, e["stueck"], e["auktionen"], e["ohne"], *werte,
                        w["L"] if hat_vergleich else "", w["M"] if hat_vergleich else "",
                        w["S"] if hat_vergleich else "", w["T"] if hat_vergleich else "",
-                       schaetz, neu.get(item, 0) if hat_vergleich else ""])
+                       schaetz, neu.get(item, 0) if hat_vergleich else "",
+                       w["U"] if hat_vergleich else ""])
     return zeilen
 
 
@@ -257,6 +274,14 @@ def csv_schreiben(haus_id, zeilen, tag):
     os.makedirs(ordner, exist_ok=True)
     tagdatei = os.path.join(ordner, f"{tag}.csv")
     neu = not os.path.exists(tagdatei)
+    if not neu:  # Spalten geändert -> bestehende Zeilen auffüllen
+        with open(tagdatei, newline="", encoding="utf-8") as f:
+            alt = list(csv.reader(f))
+        if alt and alt[0] != SPALTEN:
+            with open(tagdatei, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(SPALTEN)
+                w.writerows(z + [""] * (len(SPALTEN) - len(z)) for z in alt[1:])
     with open(tagdatei, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if neu:

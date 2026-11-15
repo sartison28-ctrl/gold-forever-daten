@@ -18,6 +18,7 @@ spec.loader.exec_module(s)
 shutil.rmtree(AUS, ignore_errors=True)
 s.DATEN = os.path.join(AUS, "daten")
 s.ZUSTAND = os.path.join(AUS, "zustand")
+s.KONFIG["haeuser"] = "Horde"
 os.environ["BLIZZARD_CLIENT_ID"] = "x"
 os.environ["BLIZZARD_CLIENT_SECRET"] = "y"
 
@@ -31,10 +32,12 @@ def auktionen():
             {"id": 2, "item": {"id": 13423}, "quantity": 10, "buyout": 1050, "time_left": "LONG"},
             {"id": 3, "item": {"id": 13423}, "quantity": 5, "buyout": 1000, "time_left": "SHORT"},
             {"id": 4, "item": {"id": 720}, "quantity": 1, "bid": 500, "time_left": "MEDIUM"},
+            {"id": 7, "item": {"id": 999}, "quantity": 5, "buyout": 500, "time_left": "VERY_LONG"},
         ], [{"id": 10, "item": {"id": 2589}, "quantity": 200, "unit_price": 30, "time_left": "LONG"}]
     return [
         {"id": 1, "item": {"id": 13423}, "quantity": 20, "buyout": 2000, "time_left": "VERY_LONG"},
         {"id": 5, "item": {"id": 13423}, "quantity": 8, "buyout": 880, "time_left": "VERY_LONG"},
+        {"id": 8, "item": {"id": 999}, "quantity": 5, "buyout": 450, "time_left": "VERY_LONG"},
     ], [{"id": 10, "item": {"id": 2589}, "quantity": 150, "unit_price": 30, "time_left": "LONG"}]
 
 
@@ -79,5 +82,8 @@ assert o["weg_lang"] == "10" and o["weg_kurz"] == "5" and o["verkauf_schaetzung"
 assert o["neu_stueck"] == "8"
 assert r["2589"]["teilverkauf"] == "50" and r["2589"]["verkauf_schaetzung"] == "50"
 assert r["720"]["stueck"] == "0" and r["720"]["weg_mittel"] == "1"
+u = r["999"]
+assert u["umgestellt"] == "5" and u["weg_lang"] == "0" and u["verkauf_schaetzung"] == "0", u
+assert o["umgestellt"] == "0"
 print(json.load(open(os.path.join(s.DATEN, "status.json"))))
 print("OK")

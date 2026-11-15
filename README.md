@@ -31,14 +31,15 @@ Die Rohdaten (kompakte Auktionsliste je Stunde) liegen nicht im Git. Sie werden 
 | `stueck_ohne_sofortkauf` | Stück nur mit Gebot (gehen nicht in die Preise ein) |
 | `min`, `p10`, `p25`, `median` | Stückpreis: günstigster Preis und nach Stückzahl gewichtete Perzentile |
 | `stueck_bis_5pct` | Stück bis höchstens 5 % über dem günstigsten Preis („Wand“) |
-| `weg_lang` | seit der Vorstunde verschwunden, Restzeit war LONG/VERY_LONG → fast sicher verkauft (oder zurückgezogen) |
+| `weg_lang` | seit der Vorstunde verschwunden, Restzeit war LONG/VERY_LONG → meist verkauft (zurückgezogene Auktionen, die neu eingestellt wurden, sind schon abgezogen) |
 | `weg_mittel` | verschwunden, Restzeit war MEDIUM (verkauft oder abgelaufen) |
 | `weg_kurz` | verschwunden, Restzeit war SHORT → meist abgelaufen |
 | `teilverkauf` | Rohstoffe: Menge einer weiterhin vorhandenen Auktion gesunken |
 | `verkauf_schaetzung` | `weg_lang + teilverkauf + weg_mittel/2` |
-| `neu_stueck` | seit der Vorstunde neu eingestellte Stück |
+| `neu_stueck` | seit der Vorstunde neu eingestellte Stück (einschließlich umgestellter) |
+| `umgestellt` | Stück, die zurückgezogen und neu eingestellt wurden: Eine verschwundene Auktion wird einer neuen Auktion desselben Items mit gleicher Stückzahl zugeordnet. Diese Stück zählen nicht als Verkauf |
 
-Die Spalten `weg_*`, `teilverkauf`, `verkauf_schaetzung` und `neu_stueck` sind leer, wenn es keine passende Vorstunde gibt (erster Lauf oder mehr als 130 Minuten Abstand). Hat sich der Datenstand laut `Last-Modified` seit dem letzten Lauf nicht geändert, wird keine Zeile geschrieben.
+Die Spalten `weg_*`, `teilverkauf`, `verkauf_schaetzung`, `neu_stueck` und `umgestellt` sind leer, wenn es keine passende Vorstunde gibt (erster Lauf oder mehr als 130 Minuten Abstand). Hat sich der Datenstand laut `Last-Modified` seit dem letzten Lauf nicht geändert, wird keine Zeile geschrieben.
 
 ## Test
 `python test/test_sammeln.py` (offline, mit simulierter API).

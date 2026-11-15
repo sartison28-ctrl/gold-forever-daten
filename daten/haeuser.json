@@ -1,5 +1,5 @@
 {
- "stand": "2026-11-15T18:54Z",
+ "stand": "2026-11-15T18:55Z",
  "namespace": "dynamic-forever-eu",
  "rulesets": [
   {
@@ -20,58 +20,7 @@
   }
  ],
  "ruleset_gewaehlt": 1,
- "haeuser": [
-  {
-   "id": 113,
-   "name": "Auktionshaus der Horde",
-   "key": {
-    "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/113?namespace=dynamic-forever-eu"
-   },
-   "auktionen": 342417,
-   "items": 6582,
-   "stueck": 2809570
-  },
-  {
-   "id": 114,
-   "name": "Auktionshaus der Horde",
-   "key": {
-    "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/114?namespace=dynamic-forever-eu"
-   },
-   "auktionen": 303599,
-   "items": 6439,
-   "stueck": 2468776
-  },
-  {
-   "id": 115,
-   "name": "Auktionshaus der Horde",
-   "key": {
-    "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/115?namespace=dynamic-forever-eu"
-   },
-   "auktionen": 0,
-   "items": 0,
-   "stueck": 0
-  },
-  {
-   "id": 120,
-   "name": "Auktionshaus der Horde",
-   "key": {
-    "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/120?namespace=dynamic-forever-eu"
-   },
-   "auktionen": 30971,
-   "items": 2902,
-   "stueck": 189886
-  },
-  {
-   "id": 124,
-   "name": "Auktionshaus der Horde",
-   "key": {
-    "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/124?namespace=dynamic-forever-eu"
-   },
-   "auktionen": 37575,
-   "items": 3471,
-   "stueck": 221880
-  }
- ],
+ "haeuser": [],
  "alle_haeuser": [
   {
    "id": 110,

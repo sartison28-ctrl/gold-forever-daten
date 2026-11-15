@@ -1,1 +1,44 @@
 # gold-forever-daten
+
+Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die Blizzard Game Data API abgerufen, von GitHub Actions (`.github/workflows/ah.yml`, jede Stunde um Minute 23 UTC) gesammelt und hier gespeichert. Gold Forever (Pipeline + Web-App) liest sie von hier.
+
+## Einrichtung
+- Repo-Secrets: `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET` (develop.battle.net).
+- `konfig.json`: Region, Namespace (`dynamic-forever-eu`), Ruleset (`auto` = PvP) und Häuser (Namensfilter `"Horde"` oder eine ID-Liste wie `[113]`).
+- Manuell starten: Actions → „Auktionshaus sammeln“ → *Run workflow*.
+
+## API (inoffiziell, Stand Nov. 2026)
+- Forever hat keine Realms, sondern **Rulesets**: `/data/wow/ruleset/index`.
+- Häuser: `/data/wow/ruleset/{id}/auctions/` (den **Schrägstrich am Ende** braucht es). Davon gibt es 15, jeweils 5 für Allianz, Horde und Blackwater.
+- Auktionen: `/data/wow/ruleset/{id}/auctions/{haus}`, Rohstoffe unter `…/{haus}/commodities`.
+
+## Dateien
+| Datei | Inhalt |
+|---|---|
+| `daten/haeuser.json` | Rulesets, alle Häuser, gewählte Häuser mit Auktionszahl |
+| `daten/status.json` | letzter Lauf je Haus (Zeit, Auktionen, Stück, geschätzte Verkäufe der Stunde) |
+| `daten/<haus>/aktuell.csv` | neueste Stunde |
+| `daten/<haus>/<JJJJ-MM-TT>.csv` | alle Stunden eines Tages (UTC), angehängt |
+
+Die Rohdaten (kompakte Auktionsliste je Stunde) liegen nicht im Git. Sie werden 2 Tage lang als Actions-Artefakt aufbewahrt, die jeweils letzte Liste zusätzlich im Actions-Cache.
+
+### Spalten (Preise in Kupfer, 1g = 10000)
+| Spalte | Bedeutung |
+|---|---|
+| `zeit_utc` | Zeitpunkt des Abrufs |
+| `item_id` | Item |
+| `stueck`, `auktionen` | Stück gesamt / Anzahl Auktionen im AH |
+| `stueck_ohne_sofortkauf` | Stück nur mit Gebot (gehen nicht in die Preise ein) |
+| `min`, `p10`, `p25`, `median` | Stückpreis: günstigster Preis und nach Stückzahl gewichtete Perzentile |
+| `stueck_bis_5pct` | Stück bis höchstens 5 % über dem günstigsten Preis („Wand“) |
+| `weg_lang` | seit der Vorstunde verschwunden, Restzeit war LONG/VERY_LONG → fast sicher verkauft (oder zurückgezogen) |
+| `weg_mittel` | verschwunden, Restzeit war MEDIUM (verkauft oder abgelaufen) |
+| `weg_kurz` | verschwunden, Restzeit war SHORT → meist abgelaufen |
+| `teilverkauf` | Rohstoffe: Menge einer weiterhin vorhandenen Auktion gesunken |
+| `verkauf_schaetzung` | `weg_lang + teilverkauf + weg_mittel/2` |
+| `neu_stueck` | seit der Vorstunde neu eingestellte Stück |
+
+Die Spalten `weg_*`, `teilverkauf`, `verkauf_schaetzung` und `neu_stueck` sind leer, wenn es keine passende Vorstunde gibt (erster Lauf oder mehr als 130 Minuten Abstand). Hat sich der Datenstand laut `Last-Modified` seit dem letzten Lauf nicht geändert, wird keine Zeile geschrieben.
+
+## Test
+`python test/test_sammeln.py` (offline, mit simulierter API).

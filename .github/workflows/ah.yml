@@ -1,0 +1,69 @@
+name: Auktionshaus sammeln
+
+on:
+  schedule:
+    - cron: "23 * * * *"   # stündlich, Minute 23 (UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ah-sammeln
+  cancel-in-progress: false
+
+jobs:
+  sammeln:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Auktionsliste der Vorstunde (für die Verkaufsschätzung) – liegt im Actions-Cache, nicht im Git
+      - name: Zustand laden
+        uses: actions/cache/restore@v4
+        with:
+          path: zustand
+          key: zustand-${{ github.run_id }}
+          restore-keys: zustand-
+
+      - name: Sammeln
+        env:
+          BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+          BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+        run: python sammeln.py
+
+      - name: Zustand sichern
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: zustand
+          key: zustand-${{ github.run_id }}
+
+      # Rohdaten (kompakte Auktionsliste) 2 Tage aufbewahren
+      - name: Rohdaten aufbewahren
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roh-${{ github.run_id }}
+          path: zustand/
+          retention-days: 2
+          compression-level: 0
+
+      - name: Daten committen
+        if: success()
+        run: |
+          git config user.name  "gold-forever-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add daten
+          if git diff --cached --quiet; then echo "keine Änderungen"; exit 0; fi
+          git commit -q -m "Daten $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1

@@ -1,0 +1,8 @@
+{
+ "region": "eu",
+ "namespace": "dynamic-forever-eu",
+ "locale": "de_DE",
+ "ruleset": "auto",
+ "haeuser": "Horde",
+ "max_abstand_min": 130
+}

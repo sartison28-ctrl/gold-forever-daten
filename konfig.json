@@ -3,6 +3,8 @@
  "namespace": "dynamic-forever-eu",
  "locale": "de_DE",
  "ruleset": "auto",
- "haeuser": "Horde",
+ "haeuser": [
+  113
+ ],
  "max_abstand_min": 130
 }

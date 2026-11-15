@@ -4,7 +4,7 @@ Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die 
 
 ## Einrichtung
 - Repo-Secrets: `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET` (develop.battle.net).
-- `konfig.json`: Region, Namespace (`dynamic-forever-eu`), Ruleset (`auto` = PvP) und Häuser (Namensfilter `"Horde"` oder eine ID-Liste wie `[113]`).
+- `konfig.json`: Region, Namespace (`dynamic-forever-eu`), Ruleset (`auto` = PvP) und Häuser. Eingestellt ist **Haus 113** (Horde). Am 15.11.2026 per Abgleich mit TSM bestimmt: Auktionszahl API/TSM 1,01, Preisabweichung im Median 2 %; die Horde-Häuser 114, 120 und 124 passen nicht.
 - Manuell starten: Actions → „Auktionshaus sammeln“ → *Run workflow*.
 
 ## API (inoffiziell, Stand Nov. 2026)
@@ -15,7 +15,7 @@ Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die 
 ## Dateien
 | Datei | Inhalt |
 |---|---|
-| `daten/haeuser.json` | Rulesets, alle Häuser, gewählte Häuser mit Auktionszahl |
+| `daten/haeuser.json` | Rulesets, alle Häuser und das gewählte Haus mit Auktionszahl. Hinweis: Laut Blizzard-Forum liefert jedes Ruleset dieselben Häuser, das Ruleset filtert also nicht. |
 | `daten/status.json` | letzter Lauf je Haus (Zeit, Auktionen, Stück, geschätzte Verkäufe der Stunde) |
 | `daten/<haus>/aktuell.csv` | neueste Stunde |
 | `daten/<haus>/<JJJJ-MM-TT>.csv` | alle Stunden eines Tages (UTC), angehängt |

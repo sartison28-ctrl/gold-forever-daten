@@ -1811,13 +1811,10 @@ local function baue()
   zeigeAnsicht(GoldForeverDB.reiter or "standard")
 end
 
--- Am Auktionshaus automatisch daneben öffnen (Reiter mit den meisten Einkäufen), beim Schließen wieder weg
+-- Am Auktionshaus automatisch daneben öffnen (immer Standard · Kaufen), beim Schließen wieder weg
+-- 2.51.1: nicht mehr auf „Raid & Events“ springen, nur weil dort mehr Einkäufe stehen (Wunsch Alex 17.11.)
 local vomAH = false
-local function ahReiter()
-  local ok1, s = pcall(standardDaten); local ok2, r = pcall(raidDaten)
-  local ns, nr = ok1 and #s.kaufListe or 0, ok2 and #r.kaufListe or 0
-  return (nr > ns) and "raid" or "standard"
-end
+local function ahReiter() return "standard" end
 function GoldForever_AH(auf)
   if not fenster then baue() end
   if auf then

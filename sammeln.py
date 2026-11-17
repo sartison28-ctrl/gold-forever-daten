@@ -40,7 +40,8 @@ SPALTEN = [
     "zeit_utc", "item_id", "stueck", "auktionen", "stueck_ohne_sofortkauf",
     "min", "p10", "p25", "median", "stueck_bis_5pct",
     "weg_lang", "weg_mittel", "weg_kurz", "teilverkauf", "verkauf_schaetzung", "neu_stueck",
-    "umgestellt",
+    "umgestellt", "verkauf_preis_median", "verkauf_preis_min", "verkauf_umsatz",
+    "zurueckgezogen",
 ]
 GESPEICHERT_TIME_LEFT = {"SHORT": "S", "MEDIUM": "M", "LONG": "L", "VERY_LONG": "V"}
 
@@ -144,7 +145,7 @@ def haeuser_waehlen(api, ruleset):
 # ---------------------------------------------------------------- Abruf
 
 def auktionen_holen(api, ruleset, haus_id):
-    """Liefert (liste, last_modified). Eintrag: (id, item, menge, stueckpreis|None, time_left)."""
+    """Liefert (liste, last_modified, rohstoff_items). Eintrag: (id, item, menge, stueckpreis|None, time_left)."""
     daten, kopf = api.get(f"/data/wow/ruleset/{ruleset}/auctions/{haus_id}")
     lm = kopf.get("Last-Modified") or kopf.get("last-modified") or ""
     liste = []
@@ -165,10 +166,12 @@ def auktionen_holen(api, ruleset, haus_id):
         com_liste = (cd or {}).get("auctions") or []
     else:
         com_liste = []
+    rohstoffe = set()
     for a in com_liste:
+        rohstoffe.add(a["item"]["id"])
         liste.append((a["id"], a["item"]["id"], int(a.get("quantity") or 1),
                       int(a["unit_price"]), a.get("time_left", "")))
-    return liste, lm
+    return liste, lm, rohstoffe
 
 
 # ---------------------------------------------------------------- Auswertung
@@ -185,7 +188,8 @@ def gewichtetes_perzentil(paare, p):
     return paare[-1][0]
 
 
-def zusammenfassen(liste, vorher, zeit, luecke):
+def zusammenfassen(liste, vorher, zeit, luecke, rohstoffe=None):
+    """vorher: {auktion_id: (item, menge, time_left[, stueckpreis])} der Vorstunde."""
     items = {}
     for aid, item, menge, preis, _ in liste:
         e = items.setdefault(item, {"stueck": 0, "auktionen": 0, "ohne": 0, "preise": []})
@@ -202,19 +206,39 @@ def zusammenfassen(liste, vorher, zeit, luecke):
     # gelten als Paar "umgestellt" (zuerst gegen LONG, dann MEDIUM, dann SHORT).
     weg = {}
     neu = {}
+    verkpreise = {}  # item -> [[stueckpreis, menge], ...] der geschätzten Verkäufe
     if vorher is not None and not luecke:
         jetzt_ids = {a[0]: a for a in liste}
+        # Käufer bekommen bei Rohstoffen (Commodities) immer zuerst die billigsten Stücke:
+        # Verschwindet eine Auktion, während eine billigere aus der Vorstunde noch steht, war es kein Verkauf,
+        # sondern ein Zurückziehen (z. B. Händler stellt mit anderer Stapelgröße neu ein).
+        billigst_geblieben = {}  # item -> günstigster Stückpreis einer Auktion, die beide Stunden da ist
+        for aid, v in vorher.items():
+            if aid in jetzt_ids and len(v) > 3 and v[3] is not None and v[0] in (rohstoffe or ()):
+                b = billigst_geblieben.get(v[0])
+                if b is None or v[3] < b:
+                    billigst_geblieben[v[0]] = v[3]
         verschwunden = {}  # item -> {menge: {"L": n, "M": n, "S": n}}
-        for aid, (item, menge, tl) in vorher.items():
+        for aid, v in vorher.items():
+            item, menge, tl = v[0], v[1], v[2]
+            vpreis = v[3] if len(v) > 3 else None
             akt = jetzt_ids.get(aid)
-            w = weg.setdefault(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0})
+            w = weg.setdefault(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0, "Z": 0})
+            if akt is None and tl not in ("S", "M") and vpreis is not None \
+                    and billigst_geblieben.get(item) is not None and vpreis > billigst_geblieben[item]:
+                w["Z"] += menge  # teurer als ein gebliebenes Angebot -> zurückgezogen, nicht verkauft
+                continue
             if akt is None:
                 klasse = "S" if tl == "S" else ("M" if tl == "M" else "L")
                 w[klasse] += menge
                 k = verschwunden.setdefault(item, {}).setdefault(menge, {"L": 0, "M": 0, "S": 0})
                 k[klasse] += 1
+                if klasse == "L" and vpreis is not None:  # Preis der (wahrscheinlich) verkauften Auktion
+                    verkpreise.setdefault(item, []).append([vpreis, menge])
             elif akt[2] < menge:  # Teilverkauf (Rohstoffe)
                 w["T"] += menge - akt[2]
+                if vpreis is not None:
+                    verkpreise.setdefault(item, []).append([vpreis, menge - akt[2]])
         for aid, item, menge, _, _ in liste:
             if aid not in vorher:
                 neu[item] = neu.get(item, 0) + menge
@@ -226,13 +250,21 @@ def zusammenfassen(liste, vorher, zeit, luecke):
                             w = weg[item]
                             w[klasse] -= menge
                             w["U"] += menge
+                            if klasse == "L":  # umgestellt statt verkauft: einen Preis-Eintrag gleicher Menge entfernen
+                                vp = verkpreise.get(item, [])
+                                for j, (pr, mg) in enumerate(vp):
+                                    if mg == menge:
+                                        vp.pop(j)
+                                        break
                             break
 
+    # Filter „zurückgezogen“ geht nur, wenn die Vorstunde schon Preise hat (Zustand ab 17.11.2026)
+    mit_preis = vorher is not None and any(len(v) > 3 for v in vorher.values())
     zeilen = []
     for item in sorted(set(items) | set(weg)):
         e = items.get(item, {"stueck": 0, "auktionen": 0, "ohne": 0, "preise": []})
         p = sorted(e["preise"])
-        w = weg.get(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0})
+        w = weg.get(item, {"L": 0, "M": 0, "S": 0, "T": 0, "U": 0, "Z": 0})
         # MEDIUM (30 Min–2 Std) enthält auch Ablauf von 2-Std-Auktionen -> nicht mitzählen
         schaetz = w["L"] + w["T"] if (vorher is not None and not luecke) else ""
         if p:
@@ -243,11 +275,16 @@ def zusammenfassen(liste, vorher, zeit, luecke):
         else:
             werte = ["", "", "", "", 0]
         hat_vergleich = vorher is not None and not luecke
+        vp = sorted(tuple(x) for x in verkpreise.get(item, []) if x[1] > 0)
+        if hat_vergleich and vp:
+            vk = [gewichtetes_perzentil(vp, .50), vp[0][0], sum(pr * mg for pr, mg in vp)]
+        else:
+            vk = ["", "", ""]
         zeilen.append([zeit, item, e["stueck"], e["auktionen"], e["ohne"], *werte,
                        w["L"] if hat_vergleich else "", w["M"] if hat_vergleich else "",
                        w["S"] if hat_vergleich else "", w["T"] if hat_vergleich else "",
                        schaetz, neu.get(item, 0) if hat_vergleich else "",
-                       w["U"] if hat_vergleich else ""])
+                       w["U"] if hat_vergleich else "", *vk, w.get("Z", 0) if (hat_vergleich and mit_preis) else ""])
     return zeilen
 
 
@@ -266,7 +303,7 @@ def zustand_laden(haus_id):
 def zustand_speichern(haus_id, liste, zeit, lm):
     os.makedirs(ZUSTAND, exist_ok=True)
     z = {"zeit": zeit, "last_modified": lm,
-         "auktionen": {str(a[0]): [a[1], a[2], GESPEICHERT_TIME_LEFT.get(a[4], "?")] for a in liste}}
+         "auktionen": {str(a[0]): [a[1], a[2], GESPEICHERT_TIME_LEFT.get(a[4], "?"), a[3]] for a in liste}}
     with gzip.open(os.path.join(ZUSTAND, f"{haus_id}.json.gz"), "wt", encoding="utf-8") as f:
         json.dump(z, f, separators=(",", ":"))
 
@@ -327,7 +364,7 @@ def main():
     for h in gewaehlt:
         hid = h["id"]
         try:
-            liste, lm = auktionen_holen(api, ruleset, hid)
+            liste, lm, rohstoffe = auktionen_holen(api, ruleset, hid)
         except Exception as e:  # ein Haus darf die anderen nicht blockieren
             fehler += 1
             log(f"Haus {hid}: FEHLER {e}")
@@ -349,7 +386,7 @@ def main():
             luecke = abstand > dt.timedelta(minutes=KONFIG.get("max_abstand_min", 75))
             if luecke:
                 log(f"Haus {hid}: Abstand zum Vorstand {abstand} – keine Verkaufsschätzung")
-        zeilen = zusammenfassen(liste, vorher["auktionen"] if vorher else None, zeit, luecke)
+        zeilen = zusammenfassen(liste, vorher["auktionen"] if vorher else None, zeit, luecke, rohstoffe)
         csv_schreiben(hid, zeilen, tag)
         zustand_speichern(hid, liste, zeit, lm)
         stueck = sum(a[2] for a in liste)

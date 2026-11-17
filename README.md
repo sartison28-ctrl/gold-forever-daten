@@ -36,6 +36,8 @@ Die Rohdaten (kompakte Auktionsliste je Stunde) liegen nicht im Git. Sie werden 
 | `weg_kurz` | verschwunden, Restzeit war SHORT → meist abgelaufen |
 | `teilverkauf` | Rohstoffe: Menge einer weiterhin vorhandenen Auktion gesunken |
 | `verkauf_schaetzung` | `weg_lang + teilverkauf` (vorsichtig: `weg_mittel` enthält auch abgelaufene 2-Std-Auktionen; zurückgezogene Auktionen ohne Neueinstellung gleicher Stückzahl sind weiter enthalten) |
+| `verkauf_preis_median` / `verkauf_preis_min` / `verkauf_umsatz` | Stückpreis (mengengewichteter Median / Minimum) und Umsatz der geschätzten Verkäufe dieser Stunde (Preis aus der Vorstunde; ab 17.11.2026) |
+| `zurueckgezogen` | Rohstoffe: verschwundene LONG-Auktionen, die teurer waren als ein Angebot, das stehen blieb → zurückgezogen, nicht verkauft (Käufer bekommen immer zuerst die billigsten Stücke). Zählt nicht mehr in `weg_lang`/`verkauf_schaetzung` (ab 17.11.2026) |
 | `neu_stueck` | seit der Vorstunde neu eingestellte Stück (einschließlich umgestellter) |
 | `umgestellt` | Stück, die zurückgezogen und neu eingestellt wurden: Eine verschwundene Auktion wird einer neuen Auktion desselben Items mit gleicher Stückzahl zugeordnet. Diese Stück zählen nicht als Verkauf |
 
@@ -43,3 +45,9 @@ Die Spalten `weg_*`, `teilverkauf`, `verkauf_schaetzung`, `neu_stueck` und `umge
 
 ## Test
 `python test/test_sammeln.py` (offline, mit simulierter API).
+
+## Kennzahlen (`daten/<haus>/kennzahlen.json`, stündlich nach dem Sammeln)
+`kennzahlen.py` fasst die letzten 14 Tage je Item zusammen, in rollenden 24-Std.-Fenstern (Tagesrhythmus gleicht sich aus):
+`m` Median des günstigsten Angebots je Fenster (neueste zuerst), `st` Stück im AH, `vt`/`vt1` Verkäufe pro Tag (Ø 7 Tage / letzte 24 Std.),
+`vp`/`vpn` Median-Verkaufspreis 7 Tage und Stückzahl dahinter, `vh` Verkäufe je Stunde (UTC), `tr1`/`tr3` Trend in % gegen 1 bzw. 3 Tage vorher,
+`fall` Anzahl Tage in Folge mit fallendem Median. Für Gold Forever (Datendatei) gedacht.

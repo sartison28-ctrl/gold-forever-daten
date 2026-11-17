@@ -38,6 +38,10 @@ jobs:
           BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
         run: python sammeln.py
 
+      # Kennzahlen je Item (Tagesmediane, Trend, Verkäufe/Tag, Verkaufspreis, Verkaufsstunden) für das Addon
+      - name: Kennzahlen
+        run: python kennzahlen.py
+
       - name: Zustand sichern
         if: always()
         uses: actions/cache/save@v4

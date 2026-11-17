@@ -33,12 +33,17 @@ def auktionen():
             {"id": 3, "item": {"id": 13423}, "quantity": 5, "buyout": 1000, "time_left": "SHORT"},
             {"id": 4, "item": {"id": 720}, "quantity": 1, "bid": 500, "time_left": "MEDIUM"},
             {"id": 7, "item": {"id": 999}, "quantity": 5, "buyout": 500, "time_left": "VERY_LONG"},
-        ], [{"id": 10, "item": {"id": 2589}, "quantity": 200, "unit_price": 30, "time_left": "LONG"}]
+        ], [{"id": 10, "item": {"id": 2589}, "quantity": 200, "unit_price": 30, "time_left": "LONG"},
+             {"id": 20, "item": {"id": 3000}, "quantity": 50, "unit_price": 100, "time_left": "LONG"},
+             {"id": 21, "item": {"id": 3000}, "quantity": 40, "unit_price": 150, "time_left": "LONG"}]
     return [
         {"id": 1, "item": {"id": 13423}, "quantity": 20, "buyout": 2000, "time_left": "VERY_LONG"},
         {"id": 5, "item": {"id": 13423}, "quantity": 8, "buyout": 880, "time_left": "VERY_LONG"},
         {"id": 8, "item": {"id": 999}, "quantity": 5, "buyout": 450, "time_left": "VERY_LONG"},
-    ], [{"id": 10, "item": {"id": 2589}, "quantity": 150, "unit_price": 30, "time_left": "LONG"}]
+    ], [{"id": 10, "item": {"id": 2589}, "quantity": 150, "unit_price": 30, "time_left": "LONG"},
+         {"id": 20, "item": {"id": 3000}, "quantity": 50, "unit_price": 100, "time_left": "LONG"},
+         {"id": 22, "item": {"id": 3000}, "quantity": 20, "unit_price": 140, "time_left": "VERY_LONG"},
+         {"id": 23, "item": {"id": 3000}, "quantity": 20, "unit_price": 140, "time_left": "VERY_LONG"}]
 
 
 def fake_http(url, daten=None, kopf=None, versuche=4):
@@ -67,7 +72,7 @@ z["zeit"] = "2000-01-01T00:00Z"
 import datetime as dt
 alt = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=60)).strftime("%Y-%m-%dT%H:%MZ")
 z["zeit"] = alt
-s.zustand_speichern(111, [(k, v[0], v[1], None, {"S": "SHORT", "M": "MEDIUM", "L": "LONG", "V": "VERY_LONG"}[v[2]])
+s.zustand_speichern(111, [(k, v[0], v[1], v[3] if len(v) > 3 else None, {"S": "SHORT", "M": "MEDIUM", "L": "LONG", "V": "VERY_LONG"}[v[2]])
                          for k, v in z["auktionen"].items()], alt, "T0")
 STUNDE["n"] = 1
 s.main()
@@ -87,3 +92,12 @@ assert u["umgestellt"] == "5" and u["weg_lang"] == "0" and u["verkauf_schaetzung
 assert o["umgestellt"] == "0"
 print(json.load(open(os.path.join(s.DATEN, "status.json"))))
 print("OK")
+# Verkaufspreise (2026-11-17): verschwundene LONG-Auktion und Teilverkauf mit Preis der Vorstunde
+assert o["verkauf_preis_median"] == "105" and o["verkauf_umsatz"] == "1050", o
+k = r["2589"]
+assert k["verkauf_preis_median"] == "30" and k["verkauf_preis_min"] == "30" and k["verkauf_umsatz"] == "1500", k
+assert r["999"]["verkauf_preis_median"] == "", r["999"]  # umgestellt, kein Verkauf
+print("OK Verkaufspreise")
+z3 = r["3000"]
+assert z3["verkauf_schaetzung"] == "0" and z3["zurueckgezogen"] == "40", z3
+print("OK zurueckgezogen")

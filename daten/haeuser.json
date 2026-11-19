@@ -1,5 +1,5 @@
 {
- "stand": "2026-11-19T09:38Z",
+ "stand": "2026-11-19T11:05Z",
  "namespace": "dynamic-forever-eu",
  "rulesets": [
   {
@@ -27,9 +27,9 @@
    "key": {
     "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/113?namespace=dynamic-forever-eu"
    },
-   "auktionen": 193495,
-   "items": 6745,
-   "stueck": 1966431
+   "auktionen": 204457,
+   "items": 6763,
+   "stueck": 2079234
   }
  ],
  "alle_haeuser": [

@@ -512,7 +512,7 @@ function GF.besteNutzung(id)
       end
       if ok then
         local pro = (erl * (r[2] > 0 and r[2] or 1) - andere) / n
-        if not best or pro > best.pro then best = { name = prod.n or ("Item " .. r[1]), pro = pro, beruf = r[3], skill = r[4] } end
+        if not best or pro > best.pro then best = { name = prod.n or ((C_Item and C_Item.GetItemInfo or GetItemInfo)(r[1])) or ("Item " .. r[1]), pro = pro, beruf = r[3], skill = r[4], id = r[1], r = r } end
       end
     end
   end
@@ -543,7 +543,7 @@ function GF.empfehlung(id, i, ohnePosition, eigen)
     local p = GF.position(id)
     local pl = p and GF.verkaufsPlan(p)
     if pl then
-      local n = E(pl.art, "dein Einkauf · " .. pl.kurz)
+      local n = E(pl.art, (p.hergestellt and "hergestellt · " or "dein Einkauf · ") .. pl.kurz)
       if pl.stop then n.farbe = "|cfffb923c"; n.titel = "Verkaufen"; n.text = n.titel .. " · " .. n.grund end
       n.position = p; n.plan = pl; return n
     end
@@ -594,7 +594,16 @@ function GF.ausgeblendet(id) return GoldForeverDB.ignor and GoldForeverDB.ignor[
 function GF.ausblenden(id)
   GoldForeverDB.ignor = GoldForeverDB.ignor or {}; GoldForeverDB.ignor[tonumber(id)] = true
   local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id)
-  print(GOLD .. "Gold Forever:" .. ENDE .. " " .. name .. " ausgeblendet – im Fenster bei „Halten“ wieder einblenden.")
+  -- 2.53.3 (Befund 37): 20 Sek. lang „Rückgängig“ im Fenster
+  GF.rueckgaengig = { id = tonumber(id), t = time(), name = name }
+  print(GOLD .. "Gold Forever:" .. ENDE .. " " .. name .. " ausgeblendet – im Fenster „Rückgängig“ oder über „ausgeblendet“ einzeln wieder einblenden.")
+  if C_Timer then C_Timer.After(21, function() if GF.aktualisieren then pcall(GF.aktualisieren) end end) end
+  if GF.punkteAktualisieren then pcall(GF.punkteAktualisieren) end
+  if GF.aktualisieren then pcall(GF.aktualisieren) end
+end
+function GF.einblenden(id)
+  if GoldForeverDB.ignor then GoldForeverDB.ignor[tonumber(id)] = nil end
+  if GF.rueckgaengig and GF.rueckgaengig.id == tonumber(id) then GF.rueckgaengig = nil end
   if GF.punkteAktualisieren then pcall(GF.punkteAktualisieren) end
   if GF.aktualisieren then pcall(GF.aktualisieren) end
 end
@@ -937,7 +946,7 @@ local function tooltipZeilen(tt, id)
   if e.position then
     local p, pl = e.position, e.plan
     local gewinn, best = GF.erwartGewinn(p, pl)
-    tt:AddDoubleLine(GF.katIcon(e.art) .. " " .. e.farbe .. HAKEN .. " Dein Einkauf: " .. pl.kurz .. ENDE,
+    tt:AddDoubleLine(GF.katIcon(e.art) .. " " .. e.farbe .. HAKEN .. ((e.position and e.position.hergestellt) and " Hergestellt: " or " Dein Einkauf: ") .. pl.kurz .. ENDE,
       (gewinn >= 0 and GRUEN .. "+" or "|cfff87171-") .. GF.geld(math.abs(gewinn)) .. ENDE)
     local info = p.n .. "× gekauft je " .. GF.geld(p.ek) .. (p.post > 0 and (" · " .. p.post .. " in der Post") or "")
       .. ((best and best ~= gewinn) and (" · Bestfall " .. (best >= 0 and "+" or "-") .. GF.geld(math.abs(best))) or "")
@@ -1420,8 +1429,9 @@ function GF.positionen()
   for _, x in ipairs(b.buch) do
     local key = (x.char or "?") .. ":" .. x.id
     local p = pos[key]
-    if x.art == "kauf" and x.v then
+    if (x.art == "kauf" or x.art == "herg") and x.v then
       p = p or { id = x.id, char = x.char or "?", n = 0, kosten = 0, zielSumme = 0, zielN = 0, seit = x.t }
+      if x.art == "herg" then p.hergestellt = true end
       p.n = p.n + x.n; p.kosten = p.kosten - x.betrag
       if x.ziel then p.zielSumme = p.zielSumme + x.ziel * x.n; p.zielN = p.zielN + x.n end
       pos[key] = p
@@ -1603,6 +1613,10 @@ function GF.verkaufsPlan(p)
     local dat = d and (tonumber(d) .. "." .. tonumber(m) .. ".") or "Raidstart"
     return { art = "halt", kurz = "halten bis " .. dat, lang = "Raid-Ware: halten, ab " .. dat .. " verkaufen" }
   end
+  -- 2.53.3 (Befund 38): Hergestelltes direkt verkaufen, sobald der Erloes ueber dem Wert der Zutaten liegt
+  if p.hergestellt and markt and markt * 0.95 >= p.ek then
+    return { art = "verk", kurz = "jetzt einstellen", preis = markt, lang = "Hergestellt nach Vorschlag – jetzt für " .. GF.geld(markt) .. " einstellen (Zutaten-Wert " .. GF.geld(p.ek) .. ")" }
+  end
   if markt and markt >= p.ziel then
     -- Preisspitze: guenstiges Angebot wurde leergekauft, Markt liegt weit ueber ueblich.
     -- Trotzdem jetzt einstellen (kostet nur die Gebuehr), aber mit Rueckfallplan.
@@ -1658,7 +1672,7 @@ function GF.bilanz(sekunden)
   local pos, netto = {}, {}
   for _, x in ipairs(b.buch) do -- chronologisch, damit Flips richtig zugeordnet werden
     local drin = x.t >= ab
-    if x.v and x.art == "kauf" then
+    if x.v and (x.art == "kauf" or x.art == "herg") then
       pos[x.id] = (pos[x.id] or 0) + x.n
       if drin then
         r.aus = r.aus - x.betrag; r.nKauf = r.nKauf + 1
@@ -1961,6 +1975,10 @@ function GF.herstellenListe()
       local e = i and GF.empfehlung(id, i)
       if e and e.art == "herstellen" and e.nutzung then
         local w = GF.verkaufswert(i) or 0
+        if e.nutzung.id and e.nutzung.r then
+          local pi = GF.info(e.nutzung.id)
+          GF.herstellMerken(e.nutzung.id, e.nutzung.r, pi and GF.wert(pi) and math.floor(GF.wert(pi) / 0.95) or nil)
+        end
         eigen[#eigen + 1] = { id = id, n = n, i = i, b = e.nutzung, mehr = math.floor((e.nutzung.pro - w) * n), w = w }
       end
     end
@@ -1984,12 +2002,57 @@ function GF.herstellenListe()
       local gewinn = ok and math.floor(erl * menge - kosten) or 0
       if ok and gewinn >= 500 and gewinn >= kosten * 0.1 then
         kauf[#kauf + 1] = { id = pid, r = r, kosten = kosten, erl = erl * menge, gewinn = gewinn, frisch = frisch, menge = menge }
+        GF.herstellMerken(pid, r, math.floor(erl / 0.95))
       end
     end
   end
   table.sort(eigen, function(a, b) return a.mehr > b.mehr end)
   table.sort(kauf, function(a, b) return a.gewinn > b.gewinn end)
   return eigen, kauf
+end
+
+-- Herstellen nach Vorschlag erkennen (2.53.3, Befund 38): Vorgeschlagene Produkte merken; steigt beim offenen
+-- Berufsfenster ihre Anzahl in den Taschen, wird das wie ein Kauf gebucht (art "herg", Kosten = Wert der Zutaten,
+-- Ziel = erwarteter Erloes). Dann erscheint das Produkt unter Verkaufen/Auktionshaus und zaehlt in der Bilanz.
+GF.herstellMerk = GF.herstellMerk or {}
+function GF.rezeptKosten(r)
+  local k = 0
+  for _, z in ipairs(r[5] or {}) do
+    local zi = GF.info(z[1])
+    local preis = (zi and zi.vb) or (zi and (GF.verkaufswert(zi) or zi.p)) or 0
+    k = k + preis * z[2]
+  end
+  local menge = (r[2] and r[2] > 0) and r[2] or 1
+  return math.floor(k / menge)
+end
+local function herstellMerken(pid, r, ziel)
+  GF.herstellMerk[pid] = { t = time(), r = r, ziel = ziel }
+end
+GF.herstellMerken = herstellMerken
+local berufStand = {}
+function GF.berufAuf()
+  GF.berufOffen = true
+  berufStand = {}
+  for pid in pairs(GF.herstellMerk) do berufStand[pid] = GF.anzahl(pid) end
+end
+function GF.berufZu() GF.berufOffen = false end
+function GF.herstellenPruefen()
+  if not GF.berufOffen then return end
+  for pid, m in pairs(GF.herstellMerk) do
+    if time() - m.t <= 6 * 3600 then
+      local jetzt = GF.anzahl(pid)
+      local vorher = berufStand[pid]
+      if vorher == nil then berufStand[pid] = jetzt
+      elseif jetzt > vorher then
+        local n = jetzt - vorher
+        local kosten = GF.rezeptKosten(m.r)
+        buchen("herg", pid, n, -kosten * n, true, m.ziel)
+        berufStand[pid] = jetzt
+        local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(pid)) or ("Item " .. pid)
+        print(GOLD .. "Gold Forever:" .. ENDE .. " " .. n .. "× " .. name .. " nach Vorschlag hergestellt – steht jetzt unter „Verkaufen“ (Ziel " .. GF.geld(m.ziel or 0) .. ").")
+      else berufStand[pid] = jetzt end
+    end
+  end
 end
 
 -- ---------------------------------------------------------------- Gold nach Herkunft (2.53, Wunsch Alex)
@@ -2495,9 +2558,11 @@ f:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 pcall(f.RegisterEvent, f, "REPLICATE_ITEM_LIST_UPDATE")
 f:RegisterEvent("MERCHANT_SHOW")
 pcall(f.RegisterEvent, f, "MERCHANT_UPDATE")
-for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "LOOT_OPENED", "LOOT_READY", "LOOT_CLOSED",
+for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "LOOT_OPENED", "LOOT_READY", "LOOT_CLOSED",
   "CHAT_MSG_MONEY", "QUEST_COMPLETE", "QUEST_TURNED_IN", "QUEST_FINISHED", "MERCHANT_CLOSED", "MAIL_SHOW", "MAIL_CLOSED" }) do pcall(f.RegisterEvent, f, e) end
 f:SetScript("OnEvent", function(_, ev, ...)
+  if ev == "TRADE_SKILL_SHOW" then pcall(GF.herstellenListe); pcall(GF.berufAuf) end
+  if ev == "TRADE_SKILL_CLOSE" then pcall(GF.herstellenPruefen); pcall(GF.berufZu); return end
   if ev == "TRADE_SKILL_SHOW" or ev == "TRADE_SKILL_LIST_UPDATE" or ev == "TRADE_SKILL_DATA_SOURCE_CHANGED" then pcall(GF.rezepteLesenSpaeter); return end
   if ev == "LOOT_OPENED" or ev == "LOOT_READY" or ev == "LOOT_CLOSED" or ev == "CHAT_MSG_MONEY" or ev == "QUEST_COMPLETE" or ev == "QUEST_TURNED_IN"
     or ev == "QUEST_FINISHED" or ev == "MERCHANT_SHOW" or ev == "MERCHANT_CLOSED" or ev == "MAIL_SHOW" or ev == "MAIL_CLOSED" then
@@ -2530,7 +2595,7 @@ f:SetScript("OnEvent", function(_, ev, ...)
   end
   if ev == "REPLICATE_ITEM_LIST_UPDATE" then pcall(vollscanLesen); return end
   if ev == "AUCTION_HOUSE_CLOSED" then pcall(ahZu); return end
-  if ev == "BAG_UPDATE_DELAYED" then taschenHaken(); if GF.bankOffen then pcall(GF.punkteAktualisieren) end; return end
+  if ev == "BAG_UPDATE_DELAYED" then taschenHaken(); if GF.bankOffen then pcall(GF.punkteAktualisieren) end; if GF.berufOffen then pcall(GF.herstellenPruefen) end; return end
   if ev == "BANKFRAME_OPENED" then
     if C_Timer then C_Timer.After(1, function() pcall(GF.bankMerken) end) else pcall(GF.bankMerken) end
     GF.bankOffen = true

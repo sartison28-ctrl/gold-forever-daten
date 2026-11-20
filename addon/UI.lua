@@ -600,6 +600,10 @@ local function abschnitt(parent, farbe, anzahlKarten, kachelFarbe, anzahlKacheln
     { "Im AH prüfen", "Gold Forever sucht die Items dieses Abschnitts selbst im AH (etwa 2 Sek. je Item). Danach stimmen die Preise." })
   s.z2.pruef:SetPoint("LEFT", 0, 0)
   s.z2.info = text(s.z2, 10, F.grau); s.z2.info:SetPoint("LEFT", 0, 0)
+  -- 2.53.3 (Befund 37): „N ausgeblendet“ in jedem Abschnitt – Klick öffnet die Liste zum einzelnen Einblenden
+  s.z2.aus = link(s.z2, 10, function() GF.ausListeOffen = not GF.ausListeOffen; GF.aktualisieren() end,
+    { "Ausgeblendete Items", "Klick: Liste öffnen – dort einzelne Items wieder einblenden." })
+  s.z2.aus:SetPoint("RIGHT", 0, 0); s.z2.aus:Hide()
   s.hoehe = 20
   return s
 end
@@ -607,7 +611,11 @@ end
 local function zeile2(s, ids, info, rechts)
   local zeigeLink = GF.ah ~= nil and ids and #ids > 0
   s.pruefIds = ids
-  local an = zeigeLink or (info and info ~= "") or rechts
+  local na = GF.anzahlAusgeblendet()
+  if not rechts then
+    s.z2.aus:SetShown(na > 0); if na > 0 then s.z2.aus:Text(na .. " ausgeblendet") end
+  else s.z2.aus:Hide() end
+  local an = zeigeLink or (info and info ~= "") or rechts or (na > 0)
   s.z2:SetShown(an and true or false)
   s.oben = an and 44 or 28
   s.z2.pruef:SetShown(zeigeLink and true or false)
@@ -1176,6 +1184,26 @@ function ANSICHTEN.standard(v, s, r)
   end
   -- Bank-Leiste (2.53): nur an der offenen Bank
   v.bank:SetShown(GF.bankOffen and true or false)
+  -- Rückgängig (20 Sek.) und Liste der ausgeblendeten Items
+  local rg = GF.rueckgaengig
+  if rg and time() - rg.t <= 20 and GF.ausgeblendet(rg.id) then
+    v.undo.t:SetText(H.hell .. rg.name .. ENDE .. H.grau .. " ausgeblendet" .. ENDE); v.undo:Show()
+  else v.undo:Hide() end
+  local ausIds = {}
+  for id in pairs(GoldForeverDB.ignor or {}) do ausIds[#ausIds + 1] = id end
+  table.sort(ausIds, function(a, c) return itemName(a) < itemName(c) end)
+  if GF.ausListeOffen and #ausIds > 0 then
+    v.aus.t:SetText("Ausgeblendet  " .. H.grau .. #ausIds .. ENDE)
+    for k, z in ipairs(v.aus.zeilen) do
+      local id = ausIds[k]
+      if id then z.itemId = id; z.icon:SetTexture(itemIcon(id)); z.name:SetText(H.hell .. itemName(id) .. ENDE); z:Show() else z.itemId = nil; z:Hide() end
+    end
+    local reihen = math.ceil(math.min(#ausIds, #v.aus.zeilen) / 2)
+    v.aus.hoehe = 32 + reihen * 22; v.aus:SetHeight(v.aus.hoehe); v.aus:Show()
+  else
+    if #ausIds == 0 then GF.ausListeOffen = false end
+    v.aus:Hide()
+  end
   -- Verkaufen
   kopfSetzen(v.jetzt, "Verkaufen", #d.jetzt)
   local ns = #d.scan
@@ -1216,7 +1244,7 @@ function ANSICHTEN.standard(v, s, r)
   -- nur der gewählte Abschnitt ist sichtbar
   v.jetzt:SetShown(wahl == "verk"); v.herst:SetShown(wahl == "herst"); v.spaeter:SetShown(wahl == "halt"); v.kauf:SetShown(wahl == "kauf"); v.ah:SetShown(wahl == "ah")
   GF.angezeigteKaeufe = d.kaufListe
-  return stapeln(v, { v.bank, v.unter, v.jetzt, v.herst, v.spaeter, v.ah, v.kauf })
+  return stapeln(v, { v.bank, v.undo, v.aus, v.unter, v.jetzt, v.herst, v.spaeter, v.ah, v.kauf })
 end
 
 -- Qualität / Risiko: Platzhalter, bis der Regel-Chat die Einteilung festlegt (claude/reiter-kategorien.md)
@@ -1644,6 +1672,29 @@ local function baueAnsichten(kind)
   end
   v.jetzt = abschnitt(v, F.gruen, 20)
   v.herst = abschnitt(v, F.gelb, 15)
+  -- Rückgängig (2.53.3, Befund 37): 20 Sek. nach dem Ausblenden
+  v.undo = CreateFrame("Frame", nil, v); v.undo:SetSize(INNEN, 24); v.undo.hoehe = 24; flaeche(v.undo, 0.05); v.undo:Hide()
+  v.undo.t = text(v.undo, 10, F.grau); v.undo.t:SetPoint("LEFT", 8, 0)
+  v.undo.l = link(v.undo, 10, function() if GF.rueckgaengig then GF.einblenden(GF.rueckgaengig.id) end end, { "Rückgängig", "Das Item wieder einblenden." })
+  v.undo.l:SetPoint("RIGHT", -8, 0); v.undo.l:Text("Rückgängig")
+  -- Liste der ausgeblendeten Items (einzeln einblenden)
+  v.aus = CreateFrame("Frame", nil, v); v.aus:SetWidth(INNEN); flaeche(v.aus, 0.04); v.aus:Hide()
+  v.aus.t = text(v.aus, 12); v.aus.t:SetPoint("TOPLEFT", 8, -6)
+  v.aus.zu = link(v.aus, 10, function() GF.ausListeOffen = false; GF.aktualisieren() end, { "Schließen" }); v.aus.zu:SetPoint("TOPRIGHT", -8, -6); v.aus.zu:Text("schließen")
+  v.aus.alle = link(v.aus, 10, function() GF.ausListeOffen = false; GF.alleEinblenden() end, { "Alle einblenden", "Alle ausgeblendeten Items zurückholen." })
+  v.aus.alle:SetPoint("RIGHT", v.aus.zu, "LEFT", -14, 0); v.aus.alle:Text("alle einblenden")
+  v.aus.zeilen = {}
+  for k = 1, 40 do
+    local z = CreateFrame("Button", nil, v.aus); z:SetSize((INNEN - 24) / 2, 20)
+    z:SetPoint("TOPLEFT", 8 + ((k - 1) % 2) * ((INNEN - 16) / 2), -(28 + math.floor((k - 1) / 2) * 22))
+    z.hl = flaeche(z, 0.08); z.hl:Hide()
+    z.icon = z:CreateTexture(nil, "ARTWORK"); z.icon:SetSize(16, 16); z.icon:SetPoint("LEFT", 2, 0); z.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    z.name = text(z, 10); z.name:SetPoint("LEFT", 22, 0); z.name:SetWidth((INNEN - 24) / 2 - 26)
+    z:SetScript("OnClick", function(self) if self.itemId then GF.einblenden(self.itemId) end end)
+    z:SetScript("OnEnter", function(self) self.hl:Show(); GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:AddLine("Klick: wieder einblenden"); GameTooltip:Show() end)
+    z:SetScript("OnLeave", function(self) self.hl:Hide(); GameTooltip:Hide() end)
+    z:Hide(); v.aus.zeilen[k] = z
+  end
   -- Bank-Leiste (2.53): an der offenen Bank drei Knöpfe
   v.bank = CreateFrame("Frame", nil, v); v.bank:SetSize(INNEN, 24); v.bank.hoehe = 24; flaeche(v.bank, 0.04); v.bank:Hide()
   v.bank.t = text(v.bank, 10, F.grau); v.bank.t:SetPoint("LEFT", 8, 0); v.bank.t:SetText("Bank:")
@@ -1661,12 +1712,12 @@ local function baueAnsichten(kind)
     vorher = l
   end
   v.spaeter = abschnitt(v, F.blau, 5, F.blau, 22)
-  v.einblenden = link(v.spaeter.z2, 10, function() GF.alleEinblenden() end)
+  v.einblenden = link(v.spaeter.z2, 10, function() GF.ausListeOffen = not GF.ausListeOffen; GF.aktualisieren() end)
   v.einblenden:SetPoint("RIGHT", 0, 0)
   v.einblenden:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Ausgeblendete Items")
     for id in pairs(GoldForeverDB.ignor or {}) do GameTooltip:AddLine(itemName(id), F.grau[1], F.grau[2], F.grau[3]) end
-    GameTooltip:AddLine("Klick: alle wieder einblenden und neu prüfen", F.gold[1], F.gold[2], F.gold[3])
+    GameTooltip:AddLine("Klick: Liste öffnen – einzeln oder alle wieder einblenden", F.gold[1], F.gold[2], F.gold[3])
     GameTooltip:Show()
   end)
   v.tsmHalten = link(v.spaeter, 10, function() if v.haltenIds and #v.haltenIds > 0 then sucheText((namenListe(v.haltenIds))) end end,

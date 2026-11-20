@@ -1258,7 +1258,8 @@ function ANSICHTEN.standard(v, s, r)
   v.voll:SetShown(GF.ah ~= nil); v.voll:ClearAllPoints(); v.voll:SetPoint("TOPRIGHT", 0, -2)
   local ab = GF.vollscanBereitAb and GF.vollscanBereitAb()
   v.voll:Text(ab and ("Vollscan ab " .. date("%H:%M", ab)) or "Vollscan")
-  zeile2(v.kauf, idsVon(d.kauf), (d.kaufWeg or 0) > 0 and grau(d.kaufWeg .. " nach Prüfung zu teuer – ausgeblendet") or nil)
+  zeile2(v.kauf, idsVon(d.kauf), (d.kaufWeg or 0) > 0 and grau(d.kaufWeg .. " nach Prüfung zu teuer – ausgeblendet") or nil, true)
+  v.kauf.z2:Show(); v.kauf.oben = 44
   fuelle(v.kauf, d.kauf, { leer = keinKaufText() })
   v.aufk:Hide()
   -- nur der gewählte Abschnitt ist sichtbar
@@ -1450,7 +1451,28 @@ function ANSICHTEN.bilanz(v)
   local zeilen = {}
   local WAS = { flip = { "gruen", "verkauft" }, farm = { "gruen", "Mehrerlös" }, kauf = { "lila", "gekauft" } }
   local function wannText(t) return GF.WT[tonumber(date("%w", t)) + 1] .. " " .. date("%d.%m. %H:%M", t) end
-  if filter and filter.art == "bestand" then
+  if filter and filter.art == "top" then
+    -- 2.55 (Befund 46): beste Items oben, darunter die größten Verluste (schlechtestes zuerst)
+    local tf = GF.topFlops(sekundenFuer(wahl))
+    local plus, minus = {}, {}
+    for _, e in ipairs(tf) do if e.profit >= 0 then plus[#plus + 1] = e else table.insert(minus, 1, e) end end
+    local nM = math.min(#minus, 6); local nP = math.min(#plus, 12 - nM)
+    local function zeile(e)
+      local pct = e.pct and math.floor(e.pct * 100 + 0.5)
+      local det = {
+        { "Verkauft", e.vN .. " Stück für " .. GF.geld(e.vG) .. " (je " .. GF.geld(math.floor(e.vG / e.vN)) .. ")" },
+        e.eigen and { "Gekauft", "nichts – eigene Ware (Loot/Farm)" } or { "Gekauft (gesamt)", e.kN .. " Stück, Ø " .. GF.geld(math.floor(e.ek)) .. " je Stück" },
+        { "Profit", (e.profit >= 0 and "+" or "-") .. GF.geld(math.abs(e.profit)) .. (pct and (" (" .. (pct >= 0 and "+" or "") .. pct .. " %)") or "") },
+      }
+      if e.std then det[#det + 1] = { "Ø Haltedauer", (e.std >= 48 and (math.floor(e.std / 24 + 0.5) .. " Tage") or (math.floor(e.std + 0.5) .. " Std.")) } end
+      if e.vT then det[#det + 1] = { "Letzter Verkauf", wannText(e.vT) } end
+      det[#det + 1] = { "Durch Gold Forever", e.gf and "ja" or "nein" }
+      return { id = e.id, n = e.vN, betrag = plusMinus(e.profit), details = det,
+        mitte = e.eigen and grau("eigene Ware") or ((pct and pct >= 0) and H.gruen .. "+" .. pct .. " %" .. ENDE or H.rot .. (pct or 0) .. " %" .. ENDE) }
+    end
+    for k = 1, nP do zeilen[#zeilen + 1] = zeile(plus[k]) end
+    for k = 1, nM do zeilen[#zeilen + 1] = zeile(minus[k]) end
+  elseif filter and filter.art == "bestand" then
     -- Ware noch da: gekaufte Ware, die noch nicht verkauft ist – mit Ort
     for _, p in ipairs(GF.positionen()) do
       local i = GF.info(p.id); local w = (GF.verkaufswert(i) or 0) * p.n
@@ -1667,7 +1689,8 @@ function GF.aktualisieren()
   local meta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
   local version = meta and meta("GoldForever", "Version")
   local ra = GF.realmAlter and GF.realmAlter()
-  local raText = ra and ("  ·  Realm vor " .. math.floor(ra / 3600) .. " Std.") or "  ·  " .. H.orange .. "Realm-Daten fehlen" .. ENDE
+  -- 2.55 (Befund 47): Realm-Daten älter als 3 Std. orange (neue Datei wird erst nach /reload gelesen)
+  local raText = ra and ("  ·  " .. (ra > 3 * 3600 and H.orange or "") .. "Realm vor " .. math.floor(ra / 3600) .. " Std." .. (ra > 3 * 3600 and ENDE or "")) or "  ·  " .. H.orange .. "Realm-Daten fehlen" .. ENDE
   fenster.fussL:SetText((version and ("v" .. version .. "  ·  ") or "") .. (TSM_API and "TSM live" or "GF-Daten") .. (alter and ("  ·  TSM vor " .. alter .. " Std.") or "") .. raText)
 end
 
@@ -1768,6 +1791,24 @@ local function baueAnsichten(kind)
   -- 2.52: Vollscan direkt unter Kaufen (am AH), mit Abklingzeit
   v.voll = link(v.kauf, 10, function() GF.vollscanStarten(); C_Timer.After(1, function() GF.aktualisieren() end) end,
     { "Vollscan", "Ganzes Auktionshaus einlesen (Blizzard erlaubt das alle 15 Min.). Die Kauf-Vorschläge rechnen sich danach neu. AH offen lassen, bis „gespeichert“ im Chat steht." })
+  -- 2.55 (Befund 42): „Warum nicht?“ – Items unter üblich, die nicht im Plan stehen, mit Grund
+  v.warum = link(v.kauf.z2, 10, function() GF.kaufDiagnoseChat() end)
+  v.warum:SetPoint("RIGHT", 0, 0); v.warum:Text("Warum nicht?")
+  v.warum:SetScript("OnEnter", function(self)
+    self.t:SetTextColor(1, 0.88, 0.55)
+    local ok, liste, gr, nd = pcall(GF.kaufDiagnose)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Warum nicht gekauft?")
+    if not ok or not liste then GameTooltip:AddLine("gerade keine Daten", F.grau[1], F.grau[2], F.grau[3]); GameTooltip:Show(); return end
+    GameTooltip:AddLine(#liste .. " Items mind. 10 % unter üblich, " .. nd .. " im Plan", F.grau[1], F.grau[2], F.grau[3])
+    for k = 1, math.min(8, #gr) do GameTooltip:AddDoubleLine(gr[k].g, tostring(gr[k].n), F.hell[1], F.hell[2], F.hell[3], F.gold[1], F.gold[2], F.gold[3]) end
+    if #liste > 0 then GameTooltip:AddLine(" ") end
+    for k = 1, math.min(10, #liste) do local x = liste[k]
+      GameTooltip:AddDoubleLine(x.n, "-" .. x.abw .. " %", F.hell[1], F.hell[2], F.hell[3], F.gruen[1], F.gruen[2], F.gruen[3])
+      GameTooltip:AddLine("   " .. x.grund, F.grau[1], F.grau[2], F.grau[3], true)
+    end
+    GameTooltip:AddLine("Klick: Liste im Chat (auch /gf warum)", F.gold[1], F.gold[2], F.gold[3])
+    GameTooltip:Show()
+  end)
   v.aufk = abschnitt(v, F.orange, 0, F.orange, 11)
   A.standard = v
   -- Qualität, Risiko (Platzhalter)
@@ -1861,7 +1902,14 @@ local function baueAnsichten(kind)
     kz.fuell = kz:CreateTexture(nil, "ARTWORK"); kz.fuell:SetHeight(2); kz.fuell:SetPoint("BOTTOMLEFT", 8, 6)
     b.vier[k] = kz
   end
-  b.jeReiter = text(b, 10); b.jeReiter:SetPoint("TOPLEFT", 0, -236); b.jeReiter:SetWidth(INNEN); b.jeReiter:SetWordWrap(false)
+  b.jeReiter = text(b, 10); b.jeReiter:SetPoint("TOPLEFT", 0, -236); b.jeReiter:SetWidth(INNEN - 96); b.jeReiter:SetWordWrap(false)
+  -- 2.55 (Befund 46): Top-Verkäufe & Verluste je Item
+  b.top = link(b, 10, function()
+    local f = GF.bilanzFilter
+    if f and f.art == "top" then GF.bilanzFilter = nil else GF.bilanzFilter = { art = "top", titel = "Top-Verkäufe & Verluste" } end
+    GF.aktualisieren()
+  end, { "Top-Verkäufe & Verluste", "Je Item im gewählten Zeitraum: Menge, Einkauf, Verkauf, Profit absolut und in %, Haltedauer." })
+  b.top:SetPoint("TOPRIGHT", 0, -233); b.top:Text("Top & Verluste")
   b.herkunft = text(b, 10); b.herkunft:SetPoint("TOPLEFT", 0, -258); b.herkunft:SetWidth(INNEN); b.herkunft:SetWordWrap(true); b.herkunft:SetSpacing(3)
   b.lern = text(b, 10); b.lern:SetPoint("TOPLEFT", 0, -290); b.lern:SetWidth(INNEN); b.lern:SetWordWrap(true); b.lern:SetSpacing(3)
   b.liste = abschnitt(b, F.gold, 0)
@@ -1959,7 +2007,8 @@ local function symbolePlatzieren()
   local x = -RAND - 20 - 8
   fenster.symbole.test:SetShown(testmodus())
   if testmodus() then fenster.symbole.test:ClearAllPoints(); fenster.symbole.test:SetPoint("TOPRIGHT", x, -24); x = x - 24 end
-  fenster.symbole.bilanz:ClearAllPoints(); fenster.symbole.bilanz:SetPoint("TOPRIGHT", x, -24)
+  fenster.symbole.bilanz:ClearAllPoints(); fenster.symbole.bilanz:SetPoint("TOPRIGHT", x, -24); x = x - 24
+  fenster.symbole.standard:ClearAllPoints(); fenster.symbole.standard:SetPoint("TOPRIGHT", x, -24)
 end
 
 -- Fenster an der Ecke oben links festmachen (statt CENTER).
@@ -2007,9 +2056,12 @@ local function baue()
   local zu = symbolKnopf(fenster, "Interface\\Buttons\\UI-StopButton", "Schließen", function() fenster:Hide() end)
   zu.i:SetTexCoord(0, 1, 0, 1); zu:SetPoint("TOPRIGHT", -RAND, -24)
   fenster.symbole = {
-    bilanz = symbolKnopf(fenster, "Interface\\Icons\\INV_Scroll_03", "Bilanz", function() zeigeAnsicht(fenster.ansicht == "bilanz" and (GoldForeverDB.reiter or "standard") or "bilanz") end),
-    test = symbolKnopf(fenster, "Interface\\Icons\\Trade_Alchemy", "Test (nur Testphase)", function() zeigeAnsicht(fenster.ansicht == "test" and (GoldForeverDB.reiter or "standard") or "test") end),
+    -- 2.55 (Befund 45): Münze = Start (Standard), Pfeil nach oben = Bilanz, Zahnrad = Test
+    standard = symbolKnopf(fenster, "Interface\\Icons\\INV_Misc_Coin_01", "Start – Standard mit seinen Reitern", function() zeigeAnsicht("standard") end),
+    bilanz = symbolKnopf(fenster, "Interface\\Buttons\\Arrow-Up-Up", "Bilanz", function() zeigeAnsicht(fenster.ansicht == "bilanz" and (GoldForeverDB.reiter or "standard") or "bilanz") end),
+    test = symbolKnopf(fenster, "Interface\\Icons\\Trade_Engineering", "Test (nur Testphase)", function() zeigeAnsicht(fenster.ansicht == "test" and (GoldForeverDB.reiter or "standard") or "test") end),
   }
+  fenster.symbole.bilanz.i:SetTexCoord(0, 1, 0, 1); fenster.symbole.bilanz.i:SetSize(18, 18)
   symbolePlatzieren()
 
   -- Kennzahlen (y 64, 4 × 103): Gold · Budget · Einnahmen · Profit (2.52, Wunsch Alex)

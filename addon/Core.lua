@@ -329,7 +329,16 @@ end
 function GF.wert(i)
   if not i then return nil end
   local m
-  for _, v in ipairs({ i.p, i.mw, i.r }) do if v and v > 0 and (not m or v < m) then m = v end end
+  -- 2.55 (Befund 43): mit Realm-Daten zaehlt der Realm – der Regions-Ø liegt auf Forever oft weit darunter
+  -- (Flitzdistel: Realm 9s 59c, Region 4s 10c -> Wert war 3s 89c). Live-Preis darunter gewinnt (man muss unterbieten).
+  local R, quelle = nil, nil
+  if i.id and GF.referenz then R, quelle = GF.referenz(i.id, i) end
+  if quelle == "realm" and R and R > 0 then
+    m = R
+    if i.p and i.p > 0 and i.p < m then m = i.p end
+  else
+    for _, v in ipairs({ i.p, i.mw, i.r }) do if v and v > 0 and (not m or v < m) then m = v end end
+  end
   if m and i.vb then m = math.min(m, i.vb - 1) end -- teurer als beim Haendler kauft niemand
   return m and math.floor(m * 0.95) or nil
 end
@@ -433,13 +442,15 @@ local function basisEmpfehlung(id, i, eigen)
   -- Gegenprobe mit dem TSM-Marktwert: liegt der Preis darueber, ist er nicht wirklich guenstig
   -- Gegenprobe (Backtest 15.11.: Treffer 77 % -> 87 %): guenstig nur, wenn der Preis auch
   -- unter 95 % des TSM-Marktwerts UND nicht ueber dem Regions-Verkaufsschnitt liegt
+  -- 2.55 (Befund 42): mit Realm-Daten keine Gegenprobe gegen den Regions-Ø mehr (auf Forever liegen viele Items
+  -- dauerhaft darueber -> konnten nie Kauf werden). TSM-Marktwert ist realm-bezogen und bleibt.
   local function ueberMarktwert()
     if not i.p then return false end
     if i.mw and i.mw > 0 and i.p > i.mw * 0.95 then return true end
-    if i.r and i.r > 0 and i.p > i.r then return true end
+    if quelle ~= "realm" and i.r and i.r > 0 and i.p > i.r then return true end
     return false
   end
-  local function gegenText() return "laut TSM nicht günstig (Marktwert " .. GF.geld(i.mw) .. ", Region " .. GF.geld(i.r) .. ")" end
+  local function gegenText() return "laut TSM nicht günstig (Marktwert " .. GF.geld(i.mw) .. (quelle ~= "realm" and (", Region " .. GF.geld(i.r)) or "") .. ")" end
   local function raidKauf(grund)
     if ueberMarktwert() then return E("halt", "Raid-Ware, aber " .. gegenText()) end
     local ok, warum = GF.handelbar(i)
@@ -598,9 +609,14 @@ function GF.verkaufswert(i)
 end
 
 -- Lohnt Verarbeiten deutlich mehr (> 10 %) als Verkaufen? -> beste Nutzung, Verkaufswert
+-- 2.55 (Befund 44): wie der Reiter Herstellen erst ab 5s Mehrerloes fuer die eigene Menge – sonst "klein" (Tooltip grau)
 function GF.verarbeitenLohnt(id, i)
   local b, w = GF.besteNutzung(id), GF.verkaufswert(i)
-  if b and w and b.pro > w * 1.1 then return b, w end
+  if b and w and b.pro > w * 1.1 then
+    local n = math.max(1, GF.anzahl(id))
+    if (b.pro - w) * n < 500 then return nil, w, b, (b.pro - w) * n end
+    return b, w
+  end
   return nil, w
 end
 
@@ -801,6 +817,54 @@ function GF.budgetPlan()
     end
   end
   return { gold = gold, budget = budget, deals = deals, grund = grund }
+end
+
+-- 2.55 (Befund 42): "Warum nicht gekauft?" – alle Items mindestens 10 % unter üblich, die nicht im Plan stehen,
+-- mit Grund und Gruppe. Gruppen-Zaehlung wird gespeichert (GoldForeverDB.kaufDiag) fuer die Auswertung.
+local DIAG = {
+  { "nicht günstig", "TSM-Gegenprobe" }, { "erholt sich", "erholt sich selten" }, { "geflutet", "Markt geflutet" },
+  { "stürzt", "Preis stürzt" }, { "fällt", "Preis fällt" }, { "wenig Handel", "wenig Handel" }, { "kaum Handel", "wenig Handel" },
+  { "Gewinn je Stück", "Gewinn je Stück zu klein" }, { "lohnt nicht", "unter 5s Gewinn" }, { "Budget", "Budget" },
+  { "Vollscan", "erst AH-Prüfung" }, { "nichts bis", "im AH nichts so billig" }, { "genug gekauft", "schon genug gekauft" },
+  { "Plan ist voll", "Plan voll (max. 5)" }, { "Händler", "Händlerware" }, { "endet in", "Event endet" }, { "Raid", "Raid-Ware" },
+  { "Preissprung", "Preissprung" }, { "nicht handelbar", "nicht handelbar" },
+}
+function GF.kaufDiagnose()
+  local P = (GF.ah and GF.ah.plan) or GF.budgetPlan()
+  local imPlan = {}; for _, d in ipairs(P.deals or {}) do imPlan[d.id] = true end
+  local liste, kat = {}, {}
+  for id in pairs(D().items or {}) do
+    local i = not imPlan[id] and not GF.ausgeblendet(id) and GF.info(id)
+    local R = i and i.p and i.p > 0 and GF.referenz(id, i)
+    if R and i.p <= R * 0.9 then
+      local grund = P.grund and P.grund[id]
+      if not grund then
+        local e = GF.empfehlung(id, i, true)
+        grund = e and e.art ~= "kauf" and e.grund or nil
+        if not grund and e and e.art == "kauf" then grund = "unter üblich, aber nicht im Plan" end
+      end
+      grund = grund or "unbekannt"
+      local abw = math.floor((1 - i.p / R) * 100 + 0.5)
+      local g
+      for _, x in ipairs(DIAG) do if grund:find(x[1], 1, true) then g = x[2]; break end end
+      g = g or (abw < 15 and "noch nicht tief genug" or "sonstiges")
+      kat[g] = (kat[g] or 0) + 1
+      liste[#liste + 1] = { id = id, n = i.n or ("Item " .. id), abw = abw, grund = grund, gruppe = g }
+    end
+  end
+  table.sort(liste, function(a, b) return a.abw > b.abw end)
+  local gr = {}; for g, n in pairs(kat) do gr[#gr + 1] = { g = g, n = n } end
+  table.sort(gr, function(a, b) return a.n > b.n end)
+  GoldForeverDB.kaufDiag = { t = time(), n = #liste, kat = kat, deals = #(P.deals or {}),
+    top = (function() local t = {}; for k = 1, math.min(15, #liste) do local x = liste[k]; t[k] = { x.id, x.abw, x.grund } end; return t end)() }
+  return liste, gr, #(P.deals or {})
+end
+function GF.kaufDiagnoseChat()
+  local liste, gr, nd = GF.kaufDiagnose()
+  print(GOLD .. "Gold Forever:" .. ENDE .. " Warum nicht gekauft? " .. #liste .. " Items mind. 10 % unter üblich, " .. nd .. " im Plan.")
+  local teile = {}; for k = 1, math.min(6, #gr) do teile[#teile + 1] = gr[k].g .. " " .. gr[k].n end
+  if #teile > 0 then print(GRAU .. "  " .. table.concat(teile, "  ·  ") .. ENDE) end
+  for k = 1, math.min(10, #liste) do local x = liste[k]; print(GRAU .. "  -" .. x.abw .. " % " .. ENDE .. x.n .. GRAU .. ": " .. x.grund .. ENDE) end
 end
 
 function GF.naechstesEvent()
@@ -1055,13 +1119,15 @@ local function tooltipZeilen(tt, id)
   local rk = GF.raid(id)
   if rk and rk[4] and rk[4] ~= "" then tt:AddLine((e and e.farbe or GRAU) .. TYP[rk[1]] .. "  ·  " .. rk[4] .. ENDE) end
   -- Berufe-Block (gelb), abgesetzt durch Trennlinie + Berufs-Icon
-  local b, w = GF.verarbeitenLohnt(id, i)
+  local b, w, bk, plusK = GF.verarbeitenLohnt(id, i)
   local h = GF.herstellung(id)
-  if b or h then
+  if b or bk or h then
     tt:AddLine(TRENNER)
     if b then
       tt:AddDoubleLine(berufIcon(b.beruf) .. " " .. GELB .. "Verarbeiten  ·  zu " .. b.name .. ENDE, berufRechts(b.beruf, b.skill))
       tt:AddLine(GELB .. "      " .. GF.geld(b.pro) .. " statt " .. GF.geld(w) .. " pro Stück" .. ENDE .. GRAU .. "  (+" .. GF.geld(b.pro - w) .. ")" .. ENDE)
+    elseif bk then
+      tt:AddDoubleLine(berufIcon(bk.beruf) .. " " .. GRAU .. "Verarbeiten zu " .. bk.name .. " lohnt kaum (+" .. GF.geld(plusK) .. ")" .. ENDE, berufRechts(bk.beruf, bk.skill))
     end
     if h then
       local g = h.erloes - h.kosten
@@ -1162,6 +1228,44 @@ function GF.handelZeitraum(sekunden)
   for id, w in pairs(proItemV) do if not r.topV or w > r.topV.w then r.topV = { id = id, w = w } end end
   for id, w in pairs(proItemK) do if not r.topK or w > r.topK.w then r.topK = { id = id, w = w } end end
   return r
+end
+-- 2.55 (Befund 46): Top-Verkaeufe & Verluste je Item im Zeitraum. Einkaufspreis = Ø aller eigenen Kaeufe
+-- (auch aelter als der Zeitraum, sonst fehlt er), Herstellen zaehlt wie Kauf. Ohne Kauf = eigene Ware (Gewinn = Erloes).
+function GF.topFlops(sekunden)
+  local ab = sekunden and (time() - sekunden) or 0
+  local ich = charKey()
+  local it = {}
+  for _, x in ipairs((GoldForeverDB.bilanz and GoldForeverDB.bilanz.buch) or {}) do
+    if (x.char == nil or x.char == ich) and (x.n or 0) > 0 and x.id then
+      local e = it[x.id] or { id = x.id, kN = 0, kG = 0, vN = 0, vG = 0, gf = false }
+      if x.art == "kauf" or x.art == "herg" then
+        e.kN = e.kN + x.n; e.kG = e.kG - (x.betrag or 0); e.kT = e.kT or x.t
+        if x.t >= ab then e.kNz = (e.kNz or 0) + x.n end
+      elseif x.art == "verk" and x.t >= ab then
+        e.vN = e.vN + x.n; e.vG = e.vG + (x.betrag or 0); e.vT = x.t
+      end
+      if x.v then e.gf = true end
+      it[x.id] = e
+    end
+  end
+  local liste = {}
+  for id, e in pairs(it) do
+    if e.vN > 0 then
+      if e.kN > 0 then
+        e.ek = e.kG / e.kN
+        e.kosten = math.floor(e.ek * e.vN)
+        e.profit = e.vG - e.kosten
+        e.pct = e.kosten > 0 and (e.profit / e.kosten) or nil
+      else
+        e.eigen = true; e.profit = e.vG
+      end
+      local erf = GF.erfahrung and GF.erfahrung(id)
+      e.std = erf and erf.avgStd or ((e.kT and e.vT and e.vT > e.kT) and (e.vT - e.kT) / 3600 or nil)
+      liste[#liste + 1] = e
+    end
+  end
+  table.sort(liste, function(a, b) return a.profit > b.profit end)
+  return liste
 end
 function GF.tagesbilanz()
   local t = GoldForeverDB.tag and GoldForeverDB.tag[charKey()]
@@ -1634,6 +1738,8 @@ local function verlustBremse(p, i, markt, istRaid)
   end
   if not grund then return nil end
   local minus = math.floor((p.ek - erloes) * p.n)
+  -- 2.55 (Befund 41): Kleinstverlust (< 2s gesamt, unter 25 %) nicht mit Gebuehr realisieren – lieber halten
+  if not istRaid and verlust < 0.25 and minus < 200 then return nil end
   return { art = "verk", stop = true, kurz = "Verlust begrenzen", preis = markt,
     lang = grund .. " – lieber jetzt für " .. GF.geld(markt) .. " verkaufen (ca. -" .. GF.geld(minus) .. ")" }
 end
@@ -2502,6 +2608,14 @@ local function vollscanAuswerten()
     else vorschlaege = #GF.budgetPlan().deals end
     print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan gespeichert: " .. n .. " Auktionen, " .. m .. " verschiedene Items. " ..
       gesetzt .. " Preise übernommen – " .. vorschlaege .. " Kauf-Vorschläge. Kandidaten werden jetzt im AH geprüft …")
+    -- 2.55 (Befund 42): Gruende festhalten und kurz nennen
+    do
+      local ok, liste, gr = pcall(GF.kaufDiagnose)
+      if ok and liste and #liste > 0 then
+        local teile = {}; for k = 1, math.min(3, #gr) do teile[#teile + 1] = gr[k].g .. " " .. gr[k].n end
+        print(GRAU .. "  Nicht gekauft (" .. #liste .. " unter üblich): " .. table.concat(teile, " · ") .. " – Details: „Warum nicht?“ unter Kaufen" .. ENDE)
+      end
+    end
     -- 2.53 (Befund 34): Kauf-Kandidaten aus dem Vollscan sofort gezielt im AH pruefen
     if GF.ah and GF.pruefen then
       local ids = {}
@@ -2729,6 +2843,7 @@ SLASH_GOLDFOREVER2 = "/goldforever"
 SlashCmdList.GOLDFOREVER = function(arg)
   arg = string.lower(arg or "")
   if arg == "einblenden" then GF.alleEinblenden(); return end
+  if arg == "warum" then GF.kaufDiagnoseChat(); return end
   if arg == "loot" then
     GoldForeverDB.loot = GoldForeverDB.loot == false
     print(GOLD .. "Gold Forever:" .. ENDE .. " Loot-Hinweise " .. (GoldForeverDB.loot == false and "aus" or "an"))

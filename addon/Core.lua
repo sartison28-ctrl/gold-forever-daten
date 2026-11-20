@@ -250,6 +250,72 @@ function GF.faelltTage(id)
   return nil
 end
 
+-- ---------------------------------------------------------------- Lernsystem (2.54, Wunsch Alex 20.11.)
+-- Aus dem Bilanz-Buch: jedes nach Vorschlag gekaufte/hergestellte Los wird mit den spaeteren Verkaeufen
+-- (zuerst gekauft = zuerst verkauft) abgeglichen. Je Item und je Warengruppe: Anzahl Geschaefte, Treffer
+-- (mit Gewinn), Ø Rendite, Ø Haltedauer, Gewinn, Verluste in Folge.
+--   bewaehrt  = >= 2 Geschaefte, >= 70 % mit Gewinn, Ø Rendite > +5 %  -> Kaufgrenze 88 % statt 85 %, mehr Menge, oben im Plan
+--   vorsicht  = >= 2 Geschaefte und < 40 % Treffer, oder die letzten 2 mit Verlust -> Kaufgrenze 75 %
+local lernCache = { n = -1 }
+function GF.lernen()
+  local buch = (GoldForeverDB.bilanz and GoldForeverDB.bilanz.buch) or {}
+  if lernCache.n == #buch and lernCache.item then return lernCache end
+  local lose, item, gruppe = {}, {}, {}
+  local function dazu(tab, key, r, std, g)
+    local x = tab[key] or { n = 0, plus = 0, rend = 0, std = 0, gewinn = 0, folge = 0 }
+    x.n = x.n + 1
+    if g > 0 then x.plus = x.plus + 1; x.folge = 0 else x.folge = x.folge + 1 end
+    x.rend = x.rend + r; x.std = x.std + std; x.gewinn = x.gewinn + g
+    tab[key] = x
+  end
+  for _, x in ipairs(buch) do
+    if (x.art == "kauf" or x.art == "herg") and x.v and (x.n or 0) > 0 then
+      local q = lose[x.id] or {}; q[#q + 1] = { n = x.n, preis = -(x.betrag or 0) / x.n, t = x.t, verk = 0, vn = 0 }; lose[x.id] = q
+    elseif x.art == "verk" and (x.n or 0) > 0 and lose[x.id] and #lose[x.id] > 0 then
+      local q, rest, proStk = lose[x.id], x.n, (x.betrag or 0) / x.n
+      while rest > 0 and #q > 0 do
+        local l = q[1]
+        local m = math.min(rest, l.n)
+        l.verk = l.verk + proStk * m; l.vn = l.vn + m; l.n = l.n - m; rest = rest - m
+        if l.n <= 0 then
+          local schnitt = l.verk / l.vn
+          local r = l.preis > 0 and (schnitt / l.preis - 1) or 0
+          local g = math.floor((schnitt - l.preis) * l.vn)
+          local std = (x.t - l.t) / 3600
+          dazu(item, x.id, r, std, g)
+          local it = (D().items or {})[x.id]
+          if it and it[8] then dazu(gruppe, it[8], r, std, g) end
+          table.remove(q, 1)
+        end
+      end
+    end
+  end
+  for _, tab in ipairs({ item, gruppe }) do
+    for _, x in pairs(tab) do
+      x.quote = x.plus / x.n; x.avg = x.rend / x.n; x.avgStd = x.std / x.n
+      x.bewaehrt = x.n >= 2 and x.quote >= 0.7 and x.avg > 0.05
+      x.vorsicht = (x.n >= 2 and x.quote < 0.4) or x.folge >= 2
+    end
+  end
+  lernCache = { n = #buch, item = item, gruppe = gruppe }
+  return lernCache
+end
+function GF.erfahrung(id) local L = GF.lernen(); return L.item[tonumber(id)] end
+-- Trefferquote fuer die Sortierung des Einkaufsplans: eigenes Item (>= 2), sonst Warengruppe (>= 5), sonst Erholungsquote
+function GF.trefferQuote(id, i)
+  local L = GF.lernen()
+  local e = L.item[tonumber(id)]
+  if e and e.n >= 2 then return e.quote, "item" end
+  local g = i and i.g and L.gruppe[i.g]
+  if g and g.n >= 5 then return g.quote, "gruppe" end
+  return GF.erholung(id, i) or 0.75, "erholung"
+end
+function GF.erfahrungText(e)
+  if not e then return nil end
+  local p = math.floor(e.avg * 100 + 0.5)
+  return e.n .. "× gehandelt, " .. e.plus .. "× mit Gewinn · Ø " .. (p >= 0 and "+" or "") .. p .. " % · Ø " .. math.floor(e.avgStd + 0.5) .. " Std."
+end
+
 -- Genug Handel fuer Kauf-Empfehlungen? (sonst bleibt man auf der Ware sitzen)
 function GF.handelbar(i)
   if (i.u or 0) < 20 then return false, "zu wenig Umsatz (" .. math.floor((i.u or 0) + 0.5) .. "/Tag)" end
@@ -418,6 +484,9 @@ local function basisEmpfehlung(id, i, eigen)
     return E("verk", "Markt fällt seit Tagen (" .. z.tl .. " %) – lieber jetzt verkaufen")
   end
   local kaufGrenze = (quelle == "realm") and -15 or -25 -- ohne eigenen Verlauf strenger
+  -- 2.54 Lernsystem: bewaehrte Items etwas frueher kaufen, Verlierer erst deutlich tiefer
+  local erf = GF.erfahrung(id)
+  if erf and erf.bewaehrt then kaufGrenze = kaufGrenze + 3 elseif erf and erf.vorsicht then kaufGrenze = kaufGrenze - 10 end
   if abw <= kaufGrenze then
     -- Kaufen nur, wenn: genug Handel, guenstiger Preis bestaetigt (2 Messungen in Folge oder live im AH),
     -- und der Preis nicht gerade noch stark faellt
@@ -444,7 +513,9 @@ local function basisEmpfehlung(id, i, eigen)
     -- Kein Kauf kurz vor Event-Ende (z. B. Dunkelmond-Abgaben)
     local ev, bis = GF.eventEndetBald(id)
     if ev then return E("halt", (-abw) .. " % unter " .. wo .. ", aber " .. ev .. " endet in " .. bis .. " Tagen – Nachfrage fällt") end
-    return E("kauf", (-abw) .. " % unter " .. wo)
+    local ek = E("kauf", (-abw) .. " % unter " .. wo .. ((erf and erf.bewaehrt) and " · bewährt" or ""))
+    ek.bewaehrt = erf and erf.bewaehrt
+    return ek
   end
   if abw >= 25 and (i.a or 3) >= 3 then
     return E("verk", abw .. " % über " .. wo .. ((i.p > R * 2) and " (teures Einzelangebot)" or ""))
@@ -699,7 +770,8 @@ function GF.budgetPlan()
         -- 2.52: Absatz = kleinerer Wert aus Region (TSM) und Realm-Verkaeufen (GitHub), 5 % davon
         local rl = GF.realm(id)
         local absatz = (rl and rl.vt) and math.min(i.u or rl.vt, rl.vt) or (i.u or 0)
-        local markt = math.max(1, math.floor(absatz * 0.05)) - (pos and pos.n or 0)
+        local erfM = GF.erfahrung(id)
+        local markt = math.max(1, math.floor(absatz * ((erfM and erfM.bewaehrt) and 0.075 or 0.05))) - (pos and pos.n or 0)
         local maxKauf = math.floor(netto / 1.1)
         -- 2.51: nur so viel planen, wie es laut Suche/Vollscan bis zum Hoechstpreis gibt (vorher nur 5 Stueck geprueft)
         local verfuegbar = GF.mengeBis(id, maxKauf)
@@ -713,7 +785,8 @@ function GF.budgetPlan()
     end
   end
   -- Erwarteter Gewinn = moeglicher Gewinn x Erholungsquote (zuverlaessige Items zuerst)
-  local function wert(k) return k.stueck * math.min(k.markt, math.floor(budget * 0.3 / k.i.p) - (k.schon or 0)) * (GF.erholung(k.id, k.i) or 0.75) end
+  -- 2.54: erwarteter Gewinn x gelernte Trefferquote (eigenes Item, sonst Warengruppe, sonst Erholung)
+  local function wert(k) return k.stueck * math.min(k.markt, math.floor(budget * 0.3 / k.i.p) - (k.schon or 0)) * (GF.trefferQuote(k.id, k.i)) end
   table.sort(kand, function(a, b) return wert(a) > wert(b) end)
   local rest, deals = budget, {}
   for _, k in ipairs(kand) do
@@ -942,6 +1015,12 @@ local function tooltipZeilen(tt, id)
     kopf = kopf .. GRAU .. "   " .. ENDE .. WEISS .. GF.geld(i.p) .. ENDE .. GRAU .. (quelle == "realm" and "  ·  üblich " or "  ·  üblich (Region) ") .. ENDE .. WEISS .. GF.geld(R or i.r) .. ENDE
   end
   tt:AddDoubleLine(kopf, (i.ahLive and (GRUEN .. "AH live" .. ENDE) or "") .. (i.u and (GRAU .. (i.ahLive and " · " or "") .. math.floor(i.u + 0.5) .. "/Tag" .. ENDE) or ""))
+  -- 2.54 Lernsystem: eigene Erfahrung mit diesem Item
+  local erf = GF.erfahrung(id)
+  if erf then
+    local farbe = erf.bewaehrt and GRUEN or (erf.vorsicht and "|cfffb923c" or GRAU)
+    tt:AddLine(farbe .. (erf.bewaehrt and "Bewährt: " or (erf.vorsicht and "Vorsicht: " or "Erfahrung: ")) .. GF.erfahrungText(erf) .. ENDE)
+  end
   if not e then return end
   if e.position then
     local p, pl = e.position, e.plan

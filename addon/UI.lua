@@ -399,6 +399,9 @@ local function karte(parent)
   z.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   z.punkt = z:CreateTexture(nil, "OVERLAY"); z.punkt:SetSize(6, 6); z.punkt:SetPoint("TOPRIGHT", z.q, "TOPRIGHT", 2, 2)
   z.punkt:SetColorTexture(0.976, 0.451, 0.086, 1) -- #F97316, F.orange wirkte im Spiel gelb
+  -- 2.54 Lernsystem: Stern = bewährt (oben links am Icon)
+  z.stern = z:CreateTexture(nil, "OVERLAY", nil, 3); z.stern:SetSize(12, 12); z.stern:SetPoint("TOPLEFT", z.q, "TOPLEFT", -3, 3)
+  z.stern:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"); z.stern:Hide()
   z.haken = z:CreateTexture(nil, "OVERLAY"); z.haken:SetSize(10, 10); z.haken:SetPoint("BOTTOMLEFT", z.q, "BOTTOMLEFT", -2, -2)
   z.haken:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready"); z.haken:SetDesaturated(true); z.haken:SetVertexColor(F.lila[1], F.lila[2], F.lila[3])
   z.name = text(z, 12); z.name:SetPoint("TOPLEFT", 40, -5)
@@ -456,6 +459,8 @@ local function setzeKarte(z, e)
   z.icon:SetTexture(e.icon or itemIcon(e.id)); z.icon:SetDesaturated(e.grau and true or false)
   z.punkt:SetShown(e.scan and true or false)
   z.haken:SetShown(e.gekauft and true or false)
+  local erf = e.id and not e.platzhalter and GF.erfahrung and GF.erfahrung(e.id)
+  z.stern:SetShown(erf and erf.bewaehrt and true or false)
   local farbe = e.grau and H.grau or H.hell
   z.name:SetWidth(0)
   z.name:SetText((e.n and (H.grau .. e.n .. "× " .. ENDE) or "") .. farbe .. (e.name or (e.id and itemName(e.id)) or "") .. ENDE)
@@ -1430,6 +1435,16 @@ function ANSICHTEN.bilanz(v)
   local HK = { { "loot", "Loot" }, { "quest", "Quests" }, { "haendler", "Händler" }, { "ah", "AH" }, { "ahkauf", "AH-Käufe" }, { "haendlerkauf", "Händler-Kauf" }, { "sonst", "Sonstiges" } }
   local teile = {}
   for _, z in ipairs(HK) do local w = hk[z[1]] or 0; if w ~= 0 then teile[#teile + 1] = H.grau .. z[2] .. " " .. ENDE .. plusMinus(w) end end
+  -- 2.54 Lernsystem: bewährte Items und Vorsicht-Items
+  local L = GF.lernen()
+  local gut, schlecht = {}, {}
+  for id, e in pairs(L.item) do
+    if e.bewaehrt then gut[#gut + 1] = { id = id, e = e } elseif e.vorsicht then schlecht[#schlecht + 1] = { id = id, e = e } end
+  end
+  table.sort(gut, function(a, c) return a.e.gewinn > c.e.gewinn end); table.sort(schlecht, function(a, c) return a.e.gewinn < c.e.gewinn end)
+  local function namen(t) local n = {}; for k = 1, math.min(5, #t) do n[#n + 1] = itemName(t[k].id) end; return table.concat(n, ", ") .. (#t > 5 and (" +" .. (#t - 5)) or "") end
+  v.lern:SetText(H.gruen .. "Bewährt (" .. #gut .. "): " .. ENDE .. H.hell .. (#gut > 0 and namen(gut) or "noch keins") .. ENDE ..
+    "\n" .. H.orange .. "Vorsicht (" .. #schlecht .. "): " .. ENDE .. H.hell .. (#schlecht > 0 and namen(schlecht) or "keins") .. ENDE)
   v.herkunft:SetText(H.gold .. "Gold nach Herkunft:  " .. ENDE .. (#teile > 0 and table.concat(teile, H.grau .. "  ·  " .. ENDE) or (H.grau .. "wird ab 2.53 mitgeschrieben" .. ENDE)))
   -- Geschäfte: alle, oder gefiltert nach Kachel (Art) bzw. Balken (Zeitraum)
   local zeilen = {}
@@ -1524,7 +1539,7 @@ function ANSICHTEN.bilanz(v)
   v.fuss:SetText(H.grau .. "Mitgeschrieben seit " .. zeitpunkt(b.start) .. (inserate > 0 and ("  ·  noch im AH nach Vorschlag: " .. inserate .. " Stück") or "") ..
     (r.ohne > 0 and ("\n" .. r.ohne .. (r.ohne == 1 and " Geschäft" or " Geschäfte") .. " ohne Vorschlag – nicht mitgezählt") or "") .. ENDE)
   -- Zeitraum 20, +8, Ergebnis 96, +8, 2 × 44 (+8), +8, Je Reiter 16, +20, Liste, +8, Fuß 32
-  local y = 20 + 8 + 96 + 8 + 44 + 8 + 44 + 8 + 16 + 8 + 28 + ABSTAND
+  local y = 20 + 8 + 96 + 8 + 44 + 8 + 44 + 8 + 16 + 8 + 28 + 4 + 30 + ABSTAND
   v.liste:ClearAllPoints(); v.liste:SetPoint("TOPLEFT", 0, -y)
   y = y + lh + 8
   v.fuss:ClearAllPoints(); v.fuss:SetPoint("TOPLEFT", 0, -y)
@@ -1848,6 +1863,7 @@ local function baueAnsichten(kind)
   end
   b.jeReiter = text(b, 10); b.jeReiter:SetPoint("TOPLEFT", 0, -236); b.jeReiter:SetWidth(INNEN); b.jeReiter:SetWordWrap(false)
   b.herkunft = text(b, 10); b.herkunft:SetPoint("TOPLEFT", 0, -258); b.herkunft:SetWidth(INNEN); b.herkunft:SetWordWrap(true); b.herkunft:SetSpacing(3)
+  b.lern = text(b, 10); b.lern:SetPoint("TOPLEFT", 0, -290); b.lern:SetWidth(INNEN); b.lern:SetWordWrap(true); b.lern:SetSpacing(3)
   b.liste = abschnitt(b, F.gold, 0)
   b.zeilen = {}
   b.alle = link(b.liste, 10, function() GF.bilanzFilter = nil; GF.aktualisieren() end)

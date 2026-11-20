@@ -1454,10 +1454,12 @@ local function ahAuf()
   local plan = GF.budgetPlan(); local start = {}
   for _, d in ipairs(plan.deals) do start[d.id] = GF.anzahl(d.id) end
   GF.ah = { plan = plan, start = start, t0 = time() }
+  if GF.sniperBereit then pcall(GF.sniperBereit) end
   if GoldForever_AH then GoldForever_AH(true) end
 end
 local function ahZu()
   GF.ah = nil; GF.kaufLauf = nil
+  if GF.sniper then GF.sniper.treffer = nil; GF.sniper.suche = nil; if GF.sniperZeigen then pcall(GF.sniperZeigen) end end
   if GoldForever_AH then GoldForever_AH(false) end
 end
 -- Seit dem Oeffnen des AH gekauft: aus den gebuchten Kaeufen (Commodities landen im Briefkasten,
@@ -2131,6 +2133,7 @@ function GF.kaufPreisDa(unit, total)
     print(GOLD .. "Gold Forever:" .. ENDE .. " Kauf abgebrochen – im AH kostet es jetzt " .. GF.geld(unit) .. " je Stück, Höchstpreis " .. GF.geld(k.max) .. ". Das Tief ist vorbei.")
   end
   if GF.aktualisieren then pcall(GF.aktualisieren) end
+  if GF.sniperZeigen then pcall(GF.sniperZeigen) end
 end
 function GF.kaufBestaetigen()
   local k = GF.kaufLauf
@@ -2546,7 +2549,7 @@ local function liveCommodity(itemID)
     end
     GF.live[itemID] = { p = p, n = n, t = time(), st = st, eigen = eigen, rohstoff = true }
     GF.planNeu()
-    if GF.aktualisieren then pcall(GF.aktualisieren) end
+    if GF.aktualisieren and not GF.sniperLeise then pcall(GF.aktualisieren) end
   end
 end
 -- ---------------------------------------------------------------- Scans mitschreiben (fuer die Auswertung)
@@ -2852,6 +2855,238 @@ local function haendlerMerken()
 end
 
 -- ---------------------------------------------------------------- Start
+-- ---------------------------------------------------------------- GF-Sniper (2.57, Wunsch Alex 20.11. 21:43)
+-- Bei offenem AH durchsucht GF reihum eine Merkliste (Schnell-Flip-Kandidaten). Liegt ein Angebot unter der
+-- Kaufgrenze (Realm-üblich, nicht eingebrochen, Markt faellt nicht über Tage) und bringt der Wiederverkauf zum
+-- üblichen Preis >= 3s, erscheint oben ein grosser Knopf + Ton. Kaufen braucht laut WoW einen echten Klick/Tastendruck:
+-- 1. Druck startet den Kauf (Server nennt den Preis), 2. Druck bestaetigt. Ist der Preis inzwischen hoeher als der
+-- Hoechstpreis, bricht GF automatisch ab. Taste: F8 (aenderbar: /gf sniper taste X). Nur Rohstoffe (Commodities).
+GF.sniper = { an = false, k = 0, liste = {}, listeT = 0 }
+local SN_TAKT, SN_MIN = 1.6, 300
+local function snDB()
+  GoldForeverDB.sniper = GoldForeverDB.sniper or {}
+  local s = GoldForeverDB.sniper
+  s.eigen = s.eigen or {}; s.taste = s.taste or "F8"; s.treffer = s.treffer or {}
+  return s
+end
+-- Merkliste (max. 40): eigene Eintraege, bewaehrte und schnell verkaufte Items, dann die Items mit dem meisten
+-- Gold-Umsatz pro Tag (Umsatz x üblich), handelbar, keine Raid-/Haendlerware, nicht eingebrochen, üblich >= 20c
+function GF.sniperListe(neu)
+  local S = GF.sniper
+  if not neu and #S.liste > 0 and time() - S.listeT < 300 then return S.liste end
+  local db, drin, out = snDB(), {}, {}
+  local function dazu(id) id = tonumber(id); if id and not drin[id] and #out < 40 then drin[id] = true; out[#out + 1] = id end end
+  for id in pairs(db.eigen) do dazu(id) end
+  local L = GF.lernen()
+  for id, e in pairs(L.item or {}) do if e.bewaehrt or (e.plus > 0 and (e.avgStd or 99) <= 6) then dazu(id) end end
+  local kand = {}
+  for id in pairs(GF.alleIds()) do
+    if not drin[id] and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) then
+      local i = GF.info(id)
+      if i and not i.vb and (i.u or 0) >= 100 and GF.handelbar(i) then
+        local R, _, _, eingebr = GF.referenz(id, i)
+        if R and R >= 20 and not eingebr and not GF.faelltTage(id) then kand[#kand + 1] = { id = id, w = (i.u or 0) * R } end
+      end
+    end
+  end
+  table.sort(kand, function(a, b) return a.w > b.w end)
+  for _, k in ipairs(kand) do dazu(k.id) end
+  S.liste, S.listeT = out, time()
+  return out
+end
+-- Treffer pruefen: guenstige Preisstufen unter der Kaufgrenze, Wiederverkauf knapp unter der naechsten Stufe (max. üblich)
+function GF.sniperBewerten(id)
+  id = tonumber(id)
+  local l = GF.live[id]; if not (l and l.st and #l.st > 0 and not l.voll) then return nil end
+  local i = GF.info(id); if not i or i.vb or GF.HAENDLERWARE[id] then return nil end
+  if not GF.handelbar(i) or GF.faelltTage(id) then return nil end
+  local R, _, _, eingebr = GF.referenz(id, i); if not R or eingebr then return nil end
+  local erf = GF.erfahrung(id)
+  local grenze = 0.85
+  if i.nurRealm and not erf then grenze = 0.80 end
+  if (i.u or 0) < 50 then grenze = math.min(grenze, 0.75) end
+  if erf and erf.bewaehrt then grenze = grenze + 0.03 elseif erf and erf.vorsicht then grenze = grenze - 0.10 end
+  if i.mw and i.mw > 0 then grenze = math.min(grenze, 0.95 * i.mw / R) end
+  local cap = math.max(3, math.floor((i.u or 0) * 0.10))
+  local gold = GetMoney and GetMoney() or 0
+  local budget = math.floor(gold * (D().budget or 0.7) * 0.30)
+  local n, kosten, maxP, naechster = 0, 0, 0, nil
+  for _, x in ipairs(l.st) do
+    if x.p <= R * grenze and n < cap then
+      local q = math.min(x.q or 1, cap - n)
+      if kosten + q * x.p > budget then q = math.floor((budget - kosten) / x.p) end
+      if q <= 0 then break end
+      n = n + q; kosten = kosten + q * x.p; maxP = math.max(maxP, x.p)
+      if q < (x.q or 1) then naechster = x.p; break end
+    elseif x.p > R * grenze then naechster = x.p; break end
+  end
+  if n < 1 then return nil end
+  local neu = math.min(R, (naechster and naechster > maxP) and (naechster - 1) or R)
+  local gewinn = math.floor(neu * 0.95 * n - kosten)
+  if gewinn < SN_MIN then return nil end
+  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(),
+    abw = math.floor((1 - maxP / R) * 100 + 0.5) }
+end
+
+-- Anzeige: Leiste oben am Auktionshaus
+local snF
+local function snText(t) return (t and t.n .. "× " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id))) or "" end
+local function snBindung(an)
+  if not snF or (InCombatLockdown and InCombatLockdown()) then return end
+  if ClearOverrideBindings then ClearOverrideBindings(snF) end
+  if an and SetOverrideBindingClick then SetOverrideBindingClick(snF, true, snDB().taste, "GoldForeverSniperKnopf") end
+end
+function GF.sniperZeigen()
+  if not snF then return end
+  local S = GF.sniper
+  snF:SetShown(GF.ah ~= nil)
+  if not GF.ah then snBindung(false); return end
+  snF.an:SetText(S.an and "Sniper: AN" or "Sniper: aus")
+  snF.an.bg:SetColorTexture(S.an and 0.29 or 0.3, S.an and 0.87 or 0.3, S.an and 0.5 or 0.3, 0.35)
+  local t = S.treffer
+  if t and time() - t.t > 45 and not GF.kaufLauf then S.treffer = nil; t = nil end
+  local k = GF.kaufLauf
+  if t then
+    snF.knopf:Show()
+    if k and k.id == t.id and k.unit then
+      snF.knopf.t:SetText("BESTÄTIGEN  " .. snText(t) .. " je " .. GF.geld(k.unit) .. "  [" .. snDB().taste .. "]")
+    elseif k and k.id == t.id then
+      snF.knopf.t:SetText("Preis wird geholt …")
+    else
+      snF.knopf.t:SetText("KAUFEN  " .. snText(t) .. " bis " .. GF.geld(t.max) .. "  ·  Gewinn +" .. GF.geld(t.gewinn) .. "  [" .. snDB().taste .. "]")
+    end
+    snF.info:SetText(GRAU .. t.abw .. " % unter üblich · Wiederverkauf je " .. GF.geld(t.neu) .. " · Rechtsklick: überspringen" .. ENDE)
+    snBindung(true)
+  else
+    snF.knopf:Hide(); snBindung(false)
+    local n = #S.liste
+    snF.info:SetText(S.an and (GRAU .. "sucht " .. (S.aktuell and (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell)) or "…") ..
+      " (" .. math.min(S.k, n) .. "/" .. n .. ") · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
+      or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sniper“ startet die Suche · Taste " .. snDB().taste .. ENDE))
+  end
+end
+local function snKlick(self, knopf)
+  local S = GF.sniper
+  local t = S.treffer; if not t then return end
+  if knopf == "RightButton" then
+    S.skip = S.skip or {}; S.skip[t.id] = time()
+    if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
+    S.treffer = nil; GF.sniperZeigen(); return
+  end
+  local k = GF.kaufLauf
+  if k and k.id == t.id and k.unit then
+    local ok, err, kk = GF.kaufBestaetigen()
+    local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
+    if ok then
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) ..
+        ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
+      local d = snDB(); local tag = date("%Y-%m-%d"); d.treffer[tag] = (d.treffer[tag] or 0) + 1
+      S.treffer = nil
+    else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
+  elseif not k then
+    GF.unterbieterMerk = GF.unterbieterMerk or {}
+    GF.unterbieterMerk[t.id] = { neu = t.neu, t = time() } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
+    local ok, err = GF.kaufStarten(t.id, t.n, t.max)
+    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); S.treffer = nil end
+  end
+  GF.sniperZeigen()
+end
+local function snBauen()
+  if snF then return end
+  snF = CreateFrame("Frame", "GoldForeverSniper", UIParent)
+  snF:SetSize(560, 58); snF:SetFrameStrata("HIGH")
+  if AuctionHouseFrame then snF:SetPoint("BOTTOM", AuctionHouseFrame, "TOP", 0, 6) else snF:SetPoint("TOP", 0, -40) end
+  snF.bg = snF:CreateTexture(nil, "BACKGROUND"); snF.bg:SetAllPoints(); snF.bg:SetColorTexture(0.06, 0.07, 0.1, 0.92)
+  snF.an = CreateFrame("Button", nil, snF); snF.an:SetSize(96, 22); snF.an:SetPoint("TOPLEFT", 6, -5)
+  snF.an.bg = snF.an:CreateTexture(nil, "BACKGROUND"); snF.an.bg:SetAllPoints()
+  snF.an.fs = snF.an:CreateFontString(nil, "OVERLAY", "GameFontNormal"); snF.an.fs:SetPoint("CENTER"); snF.an:SetFontString(snF.an.fs)
+  snF.an:SetScript("OnClick", function() GF.sniperUmschalten() end)
+  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.an, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
+  local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
+  b:SetPoint("BOTTOMLEFT", 6, 5); b:SetPoint("BOTTOMRIGHT", -6, 5); b:SetHeight(24)
+  b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(); b.bg:SetColorTexture(0.65, 0.45, 0.95, 0.55)
+  b.t = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight"); b.t:SetPoint("CENTER")
+  b:RegisterForClicks("LeftButtonUp", "RightButtonUp"); b:SetScript("OnClick", snKlick)
+  b:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.75, 0.55, 1, 0.75) end)
+  b:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.65, 0.45, 0.95, 0.55) end)
+  b:Hide(); snF.knopf = b
+  snF:Hide()
+end
+-- Reihum suchen. Pause, solange GF selbst prueft/kauft oder du im AH ein Item zum Kaufen offen hast.
+local function snPause()
+  if GF.pruef and GF.pruef.aktiv then return true end
+  if GF.kaufLauf then return true end
+  local A = AuctionHouseFrame
+  if A and ((A.CommoditiesBuyFrame and A.CommoditiesBuyFrame:IsShown()) or (A.ItemBuyFrame and A.ItemBuyFrame:IsShown())) then return true end
+  return false
+end
+local function snTick()
+  local S = GF.sniper
+  if not (S.an and GF.ah) then S.laeuft = false; return end
+  if C_Timer then C_Timer.After(SN_TAKT, snTick) end
+  if S.treffer or snPause() then GF.sniperZeigen(); return end
+  local liste = GF.sniperListe()
+  if #liste == 0 then return end
+  S.k = (S.k % #liste) + 1
+  local id = liste[S.k]
+  S.skip = S.skip or {}
+  if S.skip[id] and time() - S.skip[id] < 600 then return end
+  S.aktuell, S.suche = id, id
+  pcall(function()
+    local sortierung = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } }
+    C_AuctionHouse.SendSearchQuery(C_AuctionHouse.MakeItemKey(id), sortierung, true)
+  end)
+  GF.sniperZeigen()
+end
+-- Ergebnis einer Sniper-Suche (aus COMMODITY_SEARCH_RESULTS_UPDATED, nach liveCommodity)
+function GF.sniperErgebnis(id)
+  local S = GF.sniper
+  id = tonumber(id)
+  if not (S.an and S.suche == id) then return false end
+  S.suche = nil
+  local t = GF.sniperBewerten(id)
+  if t and not S.treffer then
+    S.treffer = t
+    if PlaySound then pcall(PlaySound, 8959) end
+    if FlashClientIcon then pcall(FlashClientIcon) end
+  end
+  GF.sniperZeigen()
+  return true
+end
+function GF.sniperBereit() snBauen(); GF.sniperListe(); GF.sniperZeigen() end
+function GF.sniperUmschalten(an)
+  local S = GF.sniper
+  snBauen()
+  if an == nil then an = not S.an end
+  S.an = an and true or false
+  if S.an then
+    GF.sniperListe(true)
+    if not S.laeuft then S.laeuft = true; snTick() end
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an – durchsucht " .. #S.liste .. " Items reihum. Treffer: Ton + Knopf oben am AH, Taste " .. snDB().taste .. " (1× starten, 1× bestätigen).")
+  else
+    S.treffer = nil; S.suche = nil
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " aus.")
+  end
+  GF.sniperZeigen()
+end
+function GF.sniperBefehl(rest)
+  local cmd, wert = (rest or ""):match("^(%S*)%s*(.-)$")
+  local db = snDB()
+  local id = wert and (tonumber(wert:match("item:(%d+)")) or tonumber(wert))
+  if cmd == "" or cmd == "an" or cmd == "aus" then
+    if not GF.ah then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " geht nur am offenen Auktionshaus."); return end
+    if cmd == "" then GF.sniperUmschalten() else GF.sniperUmschalten(cmd == "an") end
+  elseif cmd == "add" and id then db.eigen[id] = true; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " in der Merkliste.")
+  elseif cmd == "del" and id then db.eigen[id] = nil; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " entfernt.")
+  elseif cmd == "taste" and wert ~= "" then db.taste = wert:upper(); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Taste ist jetzt " .. db.taste .. ".")
+  elseif cmd == "liste" then
+    local n = {}; for k, x in ipairs(GF.sniperListe(true)) do n[#n + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or x) .. (db.eigen[x] and "*" or ""); if k >= 40 then break end end
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Merkliste (" .. #n .. "): " .. table.concat(n, ", "))
+  else
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " /gf sniper (an/aus) · /gf sniper add [Item] · /gf sniper del [Item] · /gf sniper liste · /gf sniper taste F8")
+  end
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("CHAT_MSG_LOOT")
@@ -2904,7 +3139,14 @@ f:SetScript("OnEvent", function(_, ev, ...)
   if ev == "MAIL_INBOX_UPDATE" then pcall(postLesen); return end
   if ev == "COMMODITY_PRICE_UPDATED" then pcall(GF.kaufPreisDa, ...); return end
   if ev == "OWNED_AUCTIONS_UPDATED" then pcall(eigeneAuktionen); return end
-  if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then pcall(liveCommodity, ...); pcall(scanCommodity, ...); pcall(GF.zieleCheck); pcall(pruefErgebnis, ...); return end
+  if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+    -- 2.57: Sniper-Suchen nur auswerten (kein Neuzeichnen des ganzen Fensters alle 1,6 Sek.)
+    local sid = ...
+    if GF.sniper and GF.sniper.an and GF.sniper.suche == tonumber(sid) then
+      GF.sniperLeise = true; pcall(liveCommodity, ...); GF.sniperLeise = nil; pcall(GF.sniperErgebnis, sid); return
+    end
+    pcall(liveCommodity, ...); pcall(scanCommodity, ...); pcall(GF.zieleCheck); pcall(pruefErgebnis, ...); return
+  end
   if ev == "ITEM_SEARCH_RESULTS_UPDATED" then
     pcall(liveItem, ...); pcall(scanItem, ...); pcall(GF.zieleCheck)
     local key = ...; pcall(pruefErgebnis, type(key) == "table" and key.itemID or key); return
@@ -2948,6 +3190,7 @@ SlashCmdList.GOLDFOREVER = function(arg)
   arg = string.lower(arg or "")
   if arg == "einblenden" then GF.alleEinblenden(); return end
   if arg == "warum" then GF.kaufDiagnoseChat(); return end
+  if arg:match("^sniper") then GF.sniperBefehl(arg:gsub("^sniper%s*", "")); return end
   if arg == "loot" then
     GoldForeverDB.loot = GoldForeverDB.loot == false
     print(GOLD .. "Gold Forever:" .. ENDE .. " Loot-Hinweise " .. (GoldForeverDB.loot == false and "aus" or "an"))

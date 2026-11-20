@@ -821,7 +821,15 @@ end
 -- fuer 99s 99c). Fuer jede moegliche Menge: Wiederverkauf knapp unter dem dann naechsten Angebot (Deckel 1,3 × üblich,
 -- bewaehrt 1,5 ×), Gewinn nach 5 % Gebuehr. Risiko klein halten: nur Mengen, die auch beim Verkauf zum üblichen Preis
 -- keinen Verlust machen; hoechstens 1 Tagesumsatz und der Budget-Anteil.
-function GF.treppe(id, R, maxPreis, cap, budgetMax)
+-- 2.58.3 (Auswertung Sniper 20.11.): "üblich" = guenstigstes Angebot; tatsaechlich verkauft wird oft darunter
+-- (Realm vp: Wuttrank 50c statt 67c, Weissschuppenlachs 7s statt 9s 55c). Fuer Gewinn/Absicherung zaehlt darum der
+-- niedrigere Wert – ausser der Markt steigt gerade stark (3-Tage-Trend >= +30 %), dann sind alte Verkaufspreise veraltet.
+function GF.verkaufsRef(id, R)
+  local rl = GF.realm(id)
+  if R and rl and rl.vp and rl.vp > 0 and rl.vp < R and (rl.tr3 or 0) < 30 then return rl.vp, true end
+  return R, false
+end
+function GF.treppe(id, R, maxPreis, cap, budgetMax, Rsicher)
   id = tonumber(id)
   local l = GF.live[id]
   if not (l and l.st and #l.st > 0 and R and R > 0 and maxPreis) then return nil end
@@ -839,7 +847,7 @@ function GF.treppe(id, R, maxPreis, cap, budgetMax)
     local neu = math.min((naechster and naechster - 1) or deckel, deckel)
     if neu < maxP then neu = maxP end
     local g = math.floor(neu * 0.95 * n - kosten)
-    local sicher = math.floor(math.min(R, neu) * 0.95 * n - kosten) >= 0
+    local sicher = math.floor(math.min(Rsicher or R, neu) * 0.95 * n - kosten) >= 0
     if sicher and g > 0 and (not best or g > best.gewinn) then
       best = { n = n, kosten = kosten, max = maxP, neu = neu, gewinn = g, naechster = naechster }
     end
@@ -862,6 +870,8 @@ function GF.budgetPlan()
     if R then
       -- Ziel vorsichtig: ueblicher Preis, hoechstens TSM-Marktwert
       local ziel = (i.mw and i.mw > 0) and math.min(R, i.mw) or R
+      local Rv = GF.verkaufsRef(id, R)
+      if Rv < ziel then ziel = Rv end -- 2.58.3: echter Verkaufspreis
       local netto = math.floor(ziel * 0.95)
       local stueck = netto - i.p
       if stueck >= math.max(1, i.p * 0.1) then
@@ -881,7 +891,7 @@ function GF.budgetPlan()
           if verfuegbar then markt = math.min(markt, verfuegbar) end
           local k = { id = id, i = i, ziel = ziel, stueck = stueck, markt = markt, maxKauf = maxKauf, schon = pos and pos.n or 0 }
           -- 2.57.1: Preistreppe – mehr Menge, wenn der Wiederverkauf danach hoeher liegt (Deckel: 1 Tagesumsatz)
-          local T = GF.treppe(id, R, maxKauf, math.max(markt, math.floor(absatz)) - (pos and pos.n or 0), math.floor(budget * 0.3))
+          local T = GF.treppe(id, R, maxKauf, math.max(markt, math.floor(absatz)) - (pos and pos.n or 0), math.floor(budget * 0.3), ziel)
           if T and T.n >= 1 and T.gewinn > stueck * markt then
             k.markt, k.stueck, k.maxKauf, k.ziel, k.treppe = T.n, T.gewinn / T.n, T.max, T.neu, T
           end
@@ -2989,32 +2999,38 @@ function GF.sniperBewerten(id)
   local db = snDB(); db.ausgaben = db.ausgaben or {}
   local schon = db.ausgaben[date("%Y-%m-%d")] or 0
   local budget = math.min(math.floor(gold * (D().budget or 0.7) * 0.30), math.max(0, tagesBudget - schon))
+  -- 2.58.3: sicher rechnen mit dem echten Verkaufspreis; "Knaller" (Preis <= 50 % davon) bremst die Menge nicht
+  local Rv = GF.verkaufsRef(id, R)
+  local billigsterP = l.st[1] and l.st[1].p or math.huge
+  local knaller = billigsterP <= Rv * 0.5
+  if knaller then budget = math.floor(gold * (D().budget or 0.7) * 0.30) end
   if budget < 100 then return nil end
   local n, kosten, maxP, naechster = 0, 0, 0, nil
   for _, x in ipairs(l.st) do
-    if x.p <= R * grenze and n < cap then
+    if x.p <= Rv * grenze and n < cap then
       local q = math.min(x.q or 1, cap - n)
       if kosten + q * x.p > budget then q = math.floor((budget - kosten) / x.p) end
       if q <= 0 then break end
       n = n + q; kosten = kosten + q * x.p; maxP = math.max(maxP, x.p)
       if q < (x.q or 1) then naechster = x.p; break end
-    elseif x.p > R * grenze then naechster = x.p; break end
+    elseif x.p > Rv * grenze then naechster = x.p; break end
   end
   if n < 1 then return nil end
   -- 2.58.2: Wiederverkauf knapp unter dem naechsten fremden Angebot – bleiben gleich billige Stuecke im AH
   -- liegen (Teilkauf einer Stufe), liegt der Verkaufspreis darunter (kein Gewinn -> kein Treffer)
-  local neu = math.min(R, naechster and (naechster - 1) or R)
+  local neu = math.min(Rv, naechster and (naechster - 1) or Rv)
   local gewinn = math.floor(neu * 0.95 * n - kosten)
   -- 2.57.1: Preistreppe (bis 1 Tagesumsatz) – lohnt das Aufkaufen bis zur naechsten Luecke mehr?
   local deckel = halb
   if R < 100 then deckel = math.min(deckel, 200) end
-  local T = GF.treppe(id, R, math.floor(R * grenze), deckel, budget)
+  if knaller then deckel = math.max(deckel, math.floor(umsatz)) end -- Knaller: bis 1 Tagesumsatz, kein Billig-Deckel
+  local T = GF.treppe(id, R, math.floor(Rv * grenze), deckel, budget, Rv)
   if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
   if n > deckel then return nil end
   if gewinn < SN_MIN then return nil end
   frisch[#frisch + 1] = time()
   return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(),
-    abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5) }
+    abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
 end
 
 -- Anzeige: Leiste oben am Auktionshaus
@@ -3057,10 +3073,10 @@ function GF.sniperZeigen()
     elseif k and k.id == t.id then
       snF.knopf.t:SetText("Preis wird geholt …")
     else
-      snF.knopf.t:SetText("KAUFEN  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. ENDE .. "   [" .. snDB().taste .. "]")
+      snF.knopf.t:SetText((t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. "KAUFEN  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. ENDE .. "   [" .. snDB().taste .. "]")
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
-    snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
+    snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
       GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
   else

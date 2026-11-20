@@ -1688,26 +1688,51 @@ function GF.posMessung(id, markt)
   end
   GoldForeverDB.posVerlauf[id] = v
 end
--- Abwaertstrend: die letzten 3 verschiedenen Messwerte jeweils gefallen, oder Trend der Datendatei <= -10 %
+-- Abwaertstrend ueber Tage (2.55.1, Befund 48): nicht mehr "3 Messungen hintereinander gefallen" – das war
+-- oft nur das normale Abendtief. Jetzt: gleiche Uhrzeit an Vortagen vergleichen (Messung vor 20–28 Std. und
+-- vor 44–52 Std.), oder Fall ueber Tage aus den Realm-Daten, oder Trend der Datendatei <= -10 %.
+local function messungVor(v, vonStd, bisStd)
+  local jetzt = time()
+  for k = #v, 1, -1 do
+    local a = (jetzt - v[k].t) / 3600
+    if a >= vonStd and a <= bisStd then return v[k].p end
+  end
+end
 local function faellt(id)
   local v = (GoldForeverDB.posVerlauf or {})[id] or {}
-  local werte = {}
-  for k = #v, 1, -1 do
-    if #werte == 0 or v[k].p ~= werte[#werte] then werte[#werte + 1] = v[k].p end
-    if #werte >= 3 then break end
+  local jetzt = v[#v] and v[#v].p
+  local gestern, vorgestern = messungVor(v, 20, 28), messungVor(v, 44, 52)
+  if jetzt and gestern then
+    if vorgestern and jetzt < gestern * 0.95 and gestern < vorgestern then return true end
+    if not vorgestern and jetzt < gestern * 0.92 then return true end
   end
-  if #werte >= 3 and werte[1] < werte[2] and werte[2] < werte[3] then return true end
   if GF.faelltTage(id) then return true end
   local z = GF.zeit and GF.zeit(id)
   return z ~= nil and (z.t or 0) <= -10
 end
 
 -- Verlustbremse fuer nach Vorschlag gekaufte Ware (Regeln siehe addon-stand.md):
---   Schonfrist 12 Std. nach dem Kauf (ausser bei starkem Absturz)
+--   Schonfrist 24 Std. (bewaehrt 36 Std.) nach dem Kauf, ausser Absturz >= 50 % (seit 2.55.1)
 --   a) Erloes jetzt >= 15 % unter Einkauf UND Preis faellt weiter
 --   b) Erloes jetzt >= 25 % unter Einkauf (Raid-Ware vor Raidstart: >= 40 %)
 --   c) der uebliche Preis (Ziel aus Ø/Marktwert) liegt inzwischen selbst unter dem Einkauf
 --      UND Erloes jetzt unter Einkauf -> Ziel nicht mehr erreichbar
+-- 2.55.1 (Befund 48, Wunsch Alex): Halten mindestens 24 Std. (bewaehrte Items 36 Std.), Tagesrhythmus beachten:
+-- ausserhalb des Tageshochs (Profil Werktag/Wochenende aus den Daten, sonst 11–18 Uhr) keine Verkaufswarnung,
+-- sondern "halten, neu pruefen im Tageshoch". Chat-Warnung erst, wenn der Verlust im Tageshoch 90 Min. bestehen bleibt.
+-- Ausnahme: Absturz >= 50 %, von einer frueheren Messung bestaetigt.
+function GF.imTageshoch()
+  local tf = GF.tagesfenster and GF.tagesfenster()
+  if tf then return tf.jetztVerk, tf.vVon, tf.bisVerk end
+  local h = tonumber(date("%H"))
+  return h >= 11 and h < 18, 11, ((11 - h) % 24)
+end
+local function bremseMerken(id, an)
+  GoldForeverDB.bremseSeit = GoldForeverDB.bremseSeit or {}
+  if not an then GoldForeverDB.bremseSeit[id] = nil; return nil end
+  GoldForeverDB.bremseSeit[id] = GoldForeverDB.bremseSeit[id] or time()
+  return GoldForeverDB.bremseSeit[id]
+end
 local function verlustBremse(p, i, markt, istRaid)
   if not markt then return nil end
   local erloes = markt * 0.95
@@ -1727,20 +1752,35 @@ local function verlustBremse(p, i, markt, istRaid)
       end
       return false
     end
-    if verlust >= 0.40 or (verlust >= 0.25 and bestaetigt()) then grund = pz .. " % unter Einkauf"
-    elseif alter >= 12 * 3600 and verlust >= 0.15 and faellt(p.id) then grund = pz .. " % unter Einkauf und fällt weiter"
+    local erf = GF.erfahrung and GF.erfahrung(p.id)
+    local frist = (erf and erf.bewaehrt) and 36 * 3600 or 24 * 3600
+    local absturz = verlust >= 0.50 and bestaetigt()
+    if alter < frist and not absturz then bremseMerken(p.id, false); return nil end
+    if absturz or verlust >= 0.40 or (verlust >= 0.25 and bestaetigt()) then grund = pz .. " % unter Einkauf"
+    elseif verlust >= 0.15 and faellt(p.id) then grund = pz .. " % unter Einkauf und fällt seit Tagen"
     -- 2.52 (Auswertung Woche 1): Verlierer lagen fast alle in Maerkten, die ueber Tage fielen, und wurden zu lange gehalten
-    elseif alter >= 12 * 3600 and verlust >= 0.05 and GF.faelltTage(p.id) then grund = pz .. " % unter Einkauf, Markt fällt " .. GF.faelltTage(p.id)
-    elseif alter >= 12 * 3600 and verlust > 0 then
+    elseif verlust >= 0.05 and GF.faelltTage(p.id) then grund = pz .. " % unter Einkauf, Markt fällt " .. GF.faelltTage(p.id)
+    elseif verlust > 0 then
       local zp = GF.referenz(p.id, i)
       if zp and zp * 0.95 < p.ek then grund = "üblicher Preis ist gefallen, Ziel nicht mehr erreichbar" end
     end
   end
-  if not grund then return nil end
+  if not grund then bremseMerken(p.id, false); return nil end
   local minus = math.floor((p.ek - erloes) * p.n)
   -- 2.55 (Befund 41): Kleinstverlust (< 2s gesamt, unter 25 %) nicht mit Gebuehr realisieren – lieber halten
-  if not istRaid and verlust < 0.25 and minus < 200 then return nil end
-  return { art = "verk", stop = true, kurz = "Verlust begrenzen", preis = markt,
+  if not istRaid and verlust < 0.25 and minus < 200 then bremseMerken(p.id, false); return nil end
+  -- 2.55.1: Tagesrhythmus – ausserhalb des Tageshochs halten (ausser Absturz >= 50 % / Raid-Ware)
+  if not istRaid and verlust < 0.50 then
+    local hoch, von, inStd = GF.imTageshoch()
+    if not hoch then
+      bremseMerken(p.id, false)
+      local wann = inStd and inStd < 1 and "gleich" or ("ab ca. " .. von .. " Uhr")
+      return { art = "halt", kurz = "Tagestief – halten", tief = true,
+        lang = grund .. " – aber gerade kein Tageshoch: halten, neu prüfen " .. wann }
+    end
+  end
+  local seit = bremseMerken(p.id, true)
+  return { art = "verk", stop = true, kurz = "Verlust begrenzen", preis = markt, seit = seit,
     lang = grund .. " – lieber jetzt für " .. GF.geld(markt) .. " verkaufen (ca. -" .. GF.geld(minus) .. ")" }
 end
 
@@ -2695,6 +2735,8 @@ function GF.zieleCheck()
     local i = GF.info(p.id)
     if i and i.p then GF.posMessung(p.id, i.p - 1) end
     local pl = GF.verkaufsPlan(p)
+    -- 2.55.1: Verlust-Warnung im Chat erst, wenn sie im Tageshoch 90 Min. bestehen bleibt (Raid-Ware/Absturz sofort)
+    if pl and pl.stop and pl.seit and time() - pl.seit < 5400 and (1 - (pl.preis or 0) * 0.95 / math.max(1, p.ek)) < 0.5 and not p.raid then pl = nil end
     if pl and pl.art == "verk" then
       local art = pl.stop and "stop" or "ziel"
       if gem[p.id] ~= art and not (type(gem[p.id]) == "number" and art == "ziel") then

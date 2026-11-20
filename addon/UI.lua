@@ -365,6 +365,8 @@ local function aktionKlick(self)
     local ok, err, n = GF.einstellenJetzt(a.id, a.preis, a.n, a.dauer)
     if ok then print(H.gold .. "Gold Forever:" .. ENDE .. " " .. (n or 1) .. "× " .. name .. " für je " .. GF.geld(a.preis) .. " eingestellt (" .. (a.dauer or "24 Std.") .. ").")
     else print(H.gold .. "Gold Forever:" .. ENDE .. H.orange .. " Einstellen ging nicht – " .. tostring(err) .. ENDE) end
+  elseif a.art == "toggle" then
+    GF.herstOffen = GF.herstOffen or {}; GF.herstOffen[a.id] = not GF.herstOffen[a.id]; GF.aktualisieren(); return
   elseif a.art == "check" then
     GF.pruefen({ a.id }); self.t:SetText("prüfe …"); return
   elseif a.art == "buy" then
@@ -446,7 +448,9 @@ end
 -- e = {id, n, name, zeile2, betrag, ton, scan, gekauft, weg, hinweis, orte, grau, platzhalter}
 local function setzeKarte(z, e)
   z.itemId, z.hinweis, z.weg, z.platzhalter = e.id, e.hinweis, e.weg, e.platzhalter
-  if e.ton then z.bg:SetColorTexture(e.ton[1], e.ton[2], e.ton[3], 0.12) else z.bg:SetColorTexture(1, 1, 1, 0.03) end
+  if e.ton then z.bg:SetColorTexture(e.ton[1], e.ton[2], e.ton[3], 0.12)
+  elseif e.unter then z.bg:SetColorTexture(F.gelb[1], F.gelb[2], F.gelb[3], 0.05) -- aufgeklappte Zutat (2.53.4)
+  else z.bg:SetColorTexture(1, 1, 1, 0.03) end
   local q = e.grau and { 0.3, 0.32, 0.36 } or (e.id and qualitaet(e.id)) or { 0.4, 0.42, 0.46 }
   z.q:SetColorTexture(q[1], q[2], q[3], 1)
   z.icon:SetTexture(e.icon or itemIcon(e.id)); z.icon:SetDesaturated(e.grau and true or false)
@@ -481,12 +485,12 @@ local function setzeKarte(z, e)
   z.zeile2:SetText(e.zeile2 or "")
   -- Aktions-Knopf nur am offenen AH und nur, wenn die Ware da ist (Einstellen: in der Tasche)
   local a = e.aktion
-  if a and GF.ah and (a.art ~= "post" or (GF.inTasche and GF.inTasche(a.id))) then
+  if a and (GF.ah or a.immer) and (a.art ~= "post" or (GF.inTasche and GF.inTasche(a.id))) then
     -- 2.53 (Befund 32): Einstellen nur mit frisch geprüftem Preis – sonst erst „Preis prüfen“
     if a.art == "post" and not GF.frisch(a.id) then
       a = { art = "check", id = a.id, text = "Preis prüfen", tipp = "Der Preis ist nicht frisch geprüft. Klick: Gold Forever sucht das Item im AH; danach steht hier „Einstellen“ mit dem echten Preis." }
     end
-    local c = (a.art == "cancel" and F.orange) or (a.art == "buy" and F.lila) or (a.art == "check" and F.gold) or F.gruen
+    local c = (a.art == "cancel" and F.orange) or (a.art == "buy" and F.lila) or (a.art == "check" and F.gold) or (a.art == "toggle" and F.gelb) or F.gruen
     local txt = a.text
     -- Kaufen: nach Klick 1 steht der echte Preis da -> Klick 2 bestaetigt
     local k = GF.kaufLauf
@@ -1006,24 +1010,35 @@ local function standardDaten()
     end
   end
   table.sort(d.aufk, function(a, c) return a.f > c.f end)
-  -- Herstellen (2.53): eigene Rohstoffe -> Rezept bringt mehr; Zutaten kaufen -> herstellen -> verkaufen
+  -- Herstellen (2.53.4, Befund 40): je Rezept eine Karte; aufklappbar mit den fehlenden Zutaten (AH: Kaufen-Knopf, Händler: Hinweis)
   d.herst, d.herstIds = {}, {}
-  local okH, eigen, kaufH = pcall(GF.herstellenListe)
+  GF.herstOffen = GF.herstOffen or {}
+  local okH, _, liste = pcall(GF.herstellenListe)
   if okH then
-    for _, x in ipairs(eigen) do
-      local b = x.b
-      d.herst[#d.herst + 1] = { id = x.id, n = x.n, betrag = plusMinus(x.mehr), wert = x.mehr, weg = true, orte = GF.lagerorte(x.id),
-        zeile2 = mit(verb("gelb", "Herstellen: " .. (b.name or "?")), grau("+" .. GF.geld(math.floor(b.pro - x.w)) .. " je Stück mehr als Verkaufen")),
-        hinweis = "Verarbeiten bringt je Stück ca. " .. GF.geld(math.floor(b.pro)) .. " statt " .. GF.geld(x.w) .. " beim Verkaufen" .. (b.beruf and b.beruf ~= "" and (" (" .. b.beruf .. ")") or "") .. "." }
-      d.herstIds[#d.herstIds + 1] = x.id
-    end
-    for _, k in ipairs(kaufH) do
+    for _, k in ipairs(liste) do
+      local nAH, nH = 0, 0
+      for _, f in ipairs(k.fehlt) do if f.quelle == "ah" then nAH = nAH + 1 else nH = nH + 1 end end
+      local offen = GF.herstOffen[k.id]
+      local was = (#k.fehlt == 0) and "alle Zutaten da" or ((nAH > 0 and (nAH .. " im AH") or "") .. ((nAH > 0 and nH > 0) and " + " or "") .. (nH > 0 and (nH .. " beim Händler") or ""))
       local zut = {}
-      for _, z in ipairs(k.r[5]) do zut[#zut + 1] = z[2] .. "× " .. itemName(z[1]); d.herstIds[#d.herstIds + 1] = z[1] end
-      d.herst[#d.herst + 1] = { id = k.id, n = k.menge > 1 and math.floor(k.menge + 0.5) or nil, betrag = plusMinus(k.gewinn), wert = k.gewinn, weg = true, scan = not k.frisch,
-        zeile2 = mit(verb("gelb", "Zutaten kaufen & herstellen"), grau("Kosten " .. GF.geld(math.floor(k.kosten)) .. " · Erlös " .. GF.geld(math.floor(k.erl)))),
-        hinweis = "Zutaten: " .. table.concat(zut, ", ") .. ".\nKosten ca. " .. GF.geld(math.floor(k.kosten)) .. ", Verkauf nach Gebühr ca. " .. GF.geld(math.floor(k.erl)) ..
-          (k.frisch and "" or "\nZutaten-Preise nicht frisch – erst im AH prüfen.") }
+      for _, z in ipairs(k.r[5]) do zut[#zut + 1] = (z[2] * k.menge) .. "× " .. itemName(z[1]) .. " (da: " .. math.min(z[2] * k.menge, GF.anzahl(z[1])) .. ")"; d.herstIds[#d.herstIds + 1] = z[1] end
+      d.herst[#d.herst + 1] = { id = k.id, n = math.floor(k.menge * k.aus + 0.5), betrag = plusMinus(k.gewinn), wert = k.gewinn, weg = true, scan = not k.frisch,
+        zeile2 = mit(verb("gelb", k.menge .. "× herstellen"), grau(was .. " · Kosten " .. GF.geld(math.floor(k.kosten)))),
+        aktion = (#k.fehlt > 0) and { art = "toggle", id = k.id, text = offen and "Zutaten -" or "Zutaten +", immer = true,
+          tipp = "Fehlende Zutaten auf- oder zuklappen. AH-Zutaten mit Knopf kaufen, Händlerware beim Händler holen." } or nil,
+        hinweis = "Zutaten: " .. table.concat(zut, ", ") .. ".\nKosten ca. " .. GF.geld(math.floor(k.kosten)) .. " (eigene Zutaten zum Verkaufswert, fehlende zum Händler-/AH-Preis), Erlös nach Gebühr ca. " .. GF.geld(math.floor(k.erl)) ..
+          (k.frisch and "" or "\nAH-Preise der Zutaten nicht frisch – erst im AH prüfen.") }
+      if offen then
+        for _, f in ipairs(k.fehlt) do
+          local ah = f.quelle == "ah"
+          d.herst[#d.herst + 1] = { id = f.id, n = f.n, betrag = H.grau .. GF.geld(f.preis * f.n) .. ENDE, unter = true,
+            zeile2 = ah and mit(verb("lila", "im AH kaufen"), grau("je bis " .. GF.geld(math.floor(f.preis * 1.1)) .. " · für " .. itemName(k.id)))
+              or mit(verb("blau", "beim Händler kaufen"), grau("je " .. GF.geld(f.preis) .. " · für " .. itemName(k.id))),
+            aktion = ah and GF.istRohstoff(f.id) and { art = "buy", id = f.id, n = f.n, max = math.floor(f.preis * 1.1), text = "Kaufen " .. f.n .. "×",
+              tipp = "Klick 1: Preis anfragen, Klick 2 („OK …“): kaufen. Höchstens " .. GF.geld(math.floor(f.preis * 1.1)) .. " je Stück." } or nil,
+            hinweis = ah and ("Zutat für " .. itemName(k.id) .. ". Im AH gerade ca. " .. GF.geld(f.preis) .. " je Stück.") or ("Händlerware – beim Händler für " .. GF.geld(f.preis) .. " je Stück kaufen.") }
+        end
+      end
     end
   end
   local nRez = 0; for _ in pairs((GoldForeverDB.rezepte or {})[GF.charKey()] or {}) do nRez = nRez + 1 end
@@ -1627,6 +1642,8 @@ function GF.aktualisieren()
   h = math.max(4, math.floor(h + 0.5))
   v:SetHeight(h); fenster.inhalt:SetHeight(h)
   local maxH = math.min(MAX_H, math.floor((UIParent:GetHeight() or 900) * 0.85 / (fenster:GetScale() or 1)))
+  -- 2.53.4 (Befund 39): im Reiter Standard höchstens ca. 10 Karten sichtbar, Rest per Mausrad
+  if fenster.ansicht == "standard" then maxH = math.min(maxH, KOPF + FUSS + 28 + ABSTAND + 44 + 10 * KARTE_TAKT) end
   fenster:SetHeight(math.max(MIN_H, math.min(KOPF + h + FUSS, maxH)))
   fenster.scroll:Zeige()
   -- Fuß
@@ -1671,7 +1688,7 @@ local function baueAnsichten(kind)
     v.unter.b[k] = b
   end
   v.jetzt = abschnitt(v, F.gruen, 20)
-  v.herst = abschnitt(v, F.gelb, 15)
+  v.herst = abschnitt(v, F.gelb, 40)
   -- Rückgängig (2.53.3, Befund 37): 20 Sek. nach dem Ausblenden
   v.undo = CreateFrame("Frame", nil, v); v.undo:SetSize(INNEN, 24); v.undo.hoehe = 24; flaeche(v.undo, 0.05); v.undo:Hide()
   v.undo.t = text(v.undo, 10, F.grau); v.undo.t:SetPoint("LEFT", 8, 0)

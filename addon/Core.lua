@@ -1967,48 +1967,67 @@ end
 --  a) eigene Rohstoffe, bei denen ein eigenes Rezept deutlich mehr bringt als Verkaufen (Empfehlung „herstellen“)
 --  b) Zutaten kaufen -> herstellen -> verkaufen: Gewinn >= 5s und >= 10 % der Kosten, Ergebnis verkauft sich (>= 20/Tag)
 function GF.herstellenListe()
-  local eigen, kauf = {}, {}
-  for id in pairs(GF.eigeneIds()) do
-    local n = GF.anzahl(id)
-    if n > 0 and not GF.ausgeblendet(id) then
-      local i = GF.info(id)
-      local e = i and GF.empfehlung(id, i)
-      if e and e.art == "herstellen" and e.nutzung then
-        local w = GF.verkaufswert(i) or 0
-        if e.nutzung.id and e.nutzung.r then
-          local pi = GF.info(e.nutzung.id)
-          GF.herstellMerken(e.nutzung.id, e.nutzung.r, pi and GF.wert(pi) and math.floor(GF.wert(pi) / 0.95) or nil)
-        end
-        eigen[#eigen + 1] = { id = id, n = n, i = i, b = e.nutzung, mehr = math.floor((e.nutzung.pro - w) * n), w = w }
-      end
-    end
-  end
+  -- 2.53.4 (Befund 40): eine Rechnung je Rezept und Zutat – vorhandene Menge zaehlt mit dem entgangenen
+  -- Verkaufswert, fehlende Menge mit dem Haendlerpreis (Haendlerware) bzw. dem AH-Kaufpreis nach Menge.
+  -- Rueckgabe: eigen (leer, alte Form), kauf = Liste {id, r, menge (Herstellungen), kosten, erl, gewinn, fehlt, eigen, frisch}
+  local liste = {}
   for _, r in ipairs(GF.eigeneRezepte() or {}) do
     local pid = r[1]
     local pi = GF.info(pid)
-    local erl = pi and GF.wert(pi)
+    local erl1 = pi and GF.wert(pi)
     local rl = GF.realm(pid)
     local absatz = math.max(pi and pi.u or 0, rl and rl.vt or 0)
-    if erl and erl > 0 and absatz >= 20 and not GF.ausgeblendet(pid) then
-      local kosten, ok, frisch = 0, true, true
+    if erl1 and erl1 > 0 and absatz >= 20 and not GF.ausgeblendet(pid) then
+      local aus = (r[2] and r[2] > 0) and r[2] or 1
+      -- Wie oft herstellen? Nach der eigenen Hauptzutat (am meisten Herstellungen), hoechstens 5 % des Tagesabsatzes
+      local maxAbsatz = math.max(1, math.floor(absatz * 0.05 / aus))
+      local nachEigen = 0
       for _, z in ipairs(r[5]) do
         local zi = GF.info(z[1])
-        local preis = (zi and zi.vb) or GF.kaufPreis(z[1], z[2]) or (zi and zi.p)
-        if not preis then ok = false; break end
-        if not (zi and zi.vb) and not GF.frisch(z[1]) then frisch = false end
-        kosten = kosten + preis * z[2]
+        if not (zi and zi.vb) and not GF.HAENDLERWARE[z[1]] then
+          nachEigen = math.max(nachEigen, math.floor(GF.anzahl(z[1]) / z[2]))
+        end
       end
-      local menge = (r[2] and r[2] > 0) and r[2] or 1
-      local gewinn = ok and math.floor(erl * menge - kosten) or 0
-      if ok and gewinn >= 500 and gewinn >= kosten * 0.1 then
-        kauf[#kauf + 1] = { id = pid, r = r, kosten = kosten, erl = erl * menge, gewinn = gewinn, frisch = frisch, menge = menge }
-        GF.herstellMerken(pid, r, math.floor(erl / 0.95))
+      local menge = math.max(1, math.min(maxAbsatz, nachEigen > 0 and nachEigen or 1))
+      local kosten, ok, frisch, fehlt, eigen = 0, true, true, {}, false
+      for _, z in ipairs(r[5]) do
+        local zid, bedarf = z[1], z[2] * menge
+        local zi = GF.info(zid)
+        local hat = math.min(bedarf, GF.anzahl(zid))
+        local rest = bedarf - hat
+        if hat > 0 then
+          eigen = true
+          local w = (zi and (GF.verkaufswert(zi) or zi.p)) or (zi and zi.vb) or 0
+          kosten = kosten + w * hat
+        end
+        if rest > 0 then
+          local haendler = (zi and zi.vb) or nil
+          if haendler or GF.HAENDLERWARE[zid] then
+            if not haendler then ok = false; break end
+            kosten = kosten + haendler * rest
+            fehlt[#fehlt + 1] = { id = zid, n = rest, quelle = "haendler", preis = haendler }
+          else
+            local preis = GF.kaufPreis(zid, rest) or (zi and zi.p)
+            if not preis then ok = false; break end
+            if not GF.frisch(zid) then frisch = false end
+            kosten = kosten + preis * rest
+            fehlt[#fehlt + 1] = { id = zid, n = rest, quelle = "ah", preis = preis }
+          end
+        end
+      end
+      if ok then
+        local erl = erl1 * aus * menge
+        local gewinn = math.floor(erl - kosten)
+        if gewinn >= 500 and gewinn >= kosten * 0.1 then
+          liste[#liste + 1] = { id = pid, r = r, menge = menge, aus = aus, kosten = kosten, erl = erl, gewinn = gewinn, fehlt = fehlt, eigen = eigen, frisch = frisch }
+          GF.herstellMerken(pid, r, math.floor(erl1 / 0.95))
+        end
       end
     end
   end
-  table.sort(eigen, function(a, b) return a.mehr > b.mehr end)
-  table.sort(kauf, function(a, b) return a.gewinn > b.gewinn end)
-  return eigen, kauf
+  -- eigene Zutaten zuerst (lohnt am meisten, weil schon da), dann nach Gewinn
+  table.sort(liste, function(a, b) if a.eigen ~= b.eigen then return a.eigen end; return a.gewinn > b.gewinn end)
+  return {}, liste
 end
 
 -- Herstellen nach Vorschlag erkennen (2.53.3, Befund 38): Vorgeschlagene Produkte merken; steigt beim offenen

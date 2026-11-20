@@ -46,7 +46,7 @@ local function schriftenBauen()
   for _, p in ipairs({ "Interface\\AddOns\\EllesmereUI\\media\\fonts\\Expressway.ttf", "Interface\\AddOns\\EllesmereUI\\Media\\Fonts\\Expressway.ttf",
     "Interface\\AddOns\\EllesmereUI\\media\\Expressway.ttf" }) do pfade[#pfade + 1] = p end
   pfade[#pfade + 1] = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-  for _, g in ipairs({ 16, 12, 10 }) do
+  for _, g in ipairs({ 16, 14, 12, 11, 10 }) do -- 2.53.1: 14 und 11 fehlten (leeres Fenster)
     local f = CreateFont("GoldForeverSchrift" .. g)
     for _, p in ipairs(pfade) do
       local ok, gut = pcall(f.SetFont, f, p, g, "")
@@ -59,7 +59,7 @@ local function schriftenBauen()
 end
 local function text(parent, groesse, farbe)
   local fs = parent:CreateFontString(nil, "OVERLAY")
-  fs:SetFontObject(SCHRIFT[groesse or 12])
+  fs:SetFontObject(SCHRIFT[groesse or 12] or SCHRIFT[12])
   fs:SetJustifyH("LEFT"); fs:SetWordWrap(false)
   if farbe then fs:SetTextColor(farbe[1], farbe[2], farbe[3]) end
   return fs

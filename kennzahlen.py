@@ -144,6 +144,34 @@ def haus_auswerten(ordner):
     return {"stand": neueste, "fenster_std": 24, "stunden": std, "items": items}
 
 
+def realm_lua(erg, pfad):
+    """Kompakte Realm-Datei fürs Addon (GoldForever_Realm.lua, ab 2.52).
+
+    GoldForeverRealm = {stand = "...", t = <Unixzeit>, i = {[id] = {m, n, m0, tr3, fall, vt, vp, st}}}
+      m    Median der Tagesmediane (bis 7 Tage) = „üblicher“ Realm-Preis
+      n    Anzahl Tage mit Median
+      m0   Median der letzten 24 Std.
+      tr3, fall, vt, vp, st wie in kennzahlen.json (fehlende Werte = 0 bzw. weggelassen)
+    Nur Items mit mindestens 2 Tagesmedianen oder geschätzten Verkäufen.
+    """
+    stand = erg["stand"]
+    t = int(dt.datetime.strptime(stand, "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc).timestamp())
+    zeilen = []
+    for item, e in sorted(erg["items"].items(), key=lambda x: int(x[0])):
+        ms = [x for x in (e.get("m") or [])[:7] if x is not None]
+        if len(ms) < 2 and not e.get("vt"):
+            continue
+        werte = [median(ms) or 0, len(ms), (e.get("m") or [None])[0] or 0, e.get("tr3") or 0, e.get("fall") or 0,
+                 e.get("vt") or 0, e.get("vp") or 0, e.get("st") or 0]
+        zeilen.append("[%s]={%s}," % (item, ",".join(str(int(round(w))) if isinstance(w, (int, float)) else "0" for w in werte)))
+    with open(pfad, "w", encoding="utf-8") as f:
+        f.write("-- Gold Forever Realm-Daten (GitHub, automatisch) – Felder: m, n, m0, tr3, fall, vt, vp, st\n")
+        f.write('GoldForeverRealm = {stand = "%s", t = %d, i = {\n' % (stand, t))
+        f.write("\n".join(zeilen))
+        f.write("\n}}\n")
+    return len(zeilen)
+
+
 def main():
     for ordner in sorted(glob.glob(os.path.join(DATEN, "*"))):
         if not os.path.isdir(ordner):
@@ -153,7 +181,8 @@ def main():
             continue
         with open(os.path.join(ordner, "kennzahlen.json"), "w", encoding="utf-8") as f:
             json.dump(erg, f, separators=(",", ":"))
-        print(f"{os.path.basename(ordner)}: {len(erg['items'])} Items, Stand {erg['stand']}, Vergleichsstunden {erg['stunden']}", flush=True)
+        n_lua = realm_lua(erg, os.path.join(ordner, "GoldForever_Realm.lua"))
+        print(f"{os.path.basename(ordner)}: {len(erg['items'])} Items ({n_lua} in GoldForever_Realm.lua), Stand {erg['stand']}, Vergleichsstunden {erg['stunden']}", flush=True)
 
 
 if __name__ == "__main__":

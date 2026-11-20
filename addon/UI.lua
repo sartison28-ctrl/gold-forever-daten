@@ -29,7 +29,7 @@ local KOPF, FUSS = 156, 40             -- Kopf fest (Logo-Zeile 48 hoch); Fuß =
 local KARTE_H, KARTE_TAKT = 36, 40
 local LISTE_H = 24
 local ABSTAND = 20                     -- zwischen Abschnitten
-local KACHEL, KACHEL_TAKT, KACHEL_REIHE, KACHEL_PRO_REIHE = 36, 40, 56, 11
+local KACHEL, KACHEL_TAKT, KACHEL_REIHE, KACHEL_PRO_REIHE = 36, 48, 56, 9 -- 2.52: breiter, damit „Preis tief“/„ab 9 Uhr“ passen
 local BETRAG_B = 88                    -- Betragsspalte 340–428 (8 Innenabstand rechts)
 local MIN_H, MAX_H = 400, 1400 -- Höhe: praktisch nur durch 85 % des Bildschirms begrenzt (720 schnitt den Abschnitt „Preissprung“ ab)
 
@@ -352,6 +352,17 @@ local function aktionKlick(self)
     local ok, err, n = GF.einstellenJetzt(a.id, a.preis, a.n, a.dauer)
     if ok then print(H.gold .. "Gold Forever:" .. ENDE .. " " .. (n or 1) .. "× " .. name .. " für je " .. GF.geld(a.preis) .. " eingestellt (" .. (a.dauer or "24 Std.") .. ").")
     else print(H.gold .. "Gold Forever:" .. ENDE .. H.orange .. " Einstellen ging nicht – " .. tostring(err) .. ENDE) end
+  elseif a.art == "buy" then
+    local k = GF.kaufLauf
+    if k and k.id == a.id and k.unit then
+      local ok, err, kk = GF.kaufBestaetigen()
+      if ok then print(H.gold .. "Gold Forever:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) .. ") – liegt gleich im Briefkasten.")
+      else print(H.gold .. "Gold Forever:" .. ENDE .. H.orange .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
+    else
+      local ok, err = GF.kaufStarten(a.id, a.n, a.max)
+      if not ok then print(H.gold .. "Gold Forever:" .. ENDE .. H.orange .. " Kaufen ging nicht – " .. tostring(err) .. ENDE)
+      else self.t:SetText("Preis …"); return end
+    end
   elseif a.art == "cancel" then
     local ok, err, auk = GF.abbrechenJetzt(a.id)
     if ok then print(H.gold .. "Gold Forever:" .. ENDE .. " Auktion " .. name .. (auk and auk.p and (" (" .. GF.geld(auk.p) .. ")") or "") .. " abgebrochen – die Ware kommt per Post zurück, dann neu einstellen.")
@@ -390,7 +401,9 @@ local function karte(parent)
   z.aktion:Hide()
   z.orte = {}
   for k = 1, #ORTE do
-    local o = CreateFrame("Frame", nil, z); o:SetSize(12, 12)
+    -- 2.52: Lagerort-Symbole größer (16) mit hellem Rand, besser sichtbar (Wunsch Alex)
+    local o = CreateFrame("Frame", nil, z); o:SetSize(16, 16)
+    o.r = o:CreateTexture(nil, "BORDER"); o.r:SetPoint("TOPLEFT", -1, 1); o.r:SetPoint("BOTTOMRIGHT", 1, -1); o.r:SetColorTexture(F.hell[1], F.hell[2], F.hell[3], 0.55)
     o.t = o:CreateTexture(nil, "ARTWORK"); o.t:SetAllPoints(); o.t:SetTexCoord(0.08, 0.92, 0.08, 0.92); o.t:SetDesaturated(false); o:SetAlpha(1)
     o:EnableMouse(true)
     if o.SetPropagateMouseClicks then pcall(o.SetPropagateMouseClicks, o, true) end
@@ -402,7 +415,7 @@ local function karte(parent)
     o:Hide(); z.orte[k] = o
   end
   -- Uhr-Symbol (nur bei „Halten"): Tooltip mit Prognose
-  z.uhr = CreateFrame("Frame", nil, z); z.uhr:SetSize(12, 12); z.uhr:EnableMouse(true)
+  z.uhr = CreateFrame("Frame", nil, z); z.uhr:SetSize(16, 16); z.uhr:EnableMouse(true)
   z.uhr.t = z.uhr:CreateTexture(nil, "ARTWORK"); z.uhr.t:SetAllPoints(); z.uhr.t:SetTexture("Interface\\Icons\\INV_Misc_PocketWatch_01"); z.uhr.t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   if z.uhr.SetPropagateMouseClicks then pcall(z.uhr.SetPropagateMouseClicks, z.uhr, true) end
   z.uhr:SetScript("OnEnter", function() z.hl:Show(); GameTooltip:SetOwner(z.uhr, "ANCHOR_RIGHT"); GameTooltip:AddLine(itemName(z.itemId or 0)); prognoseTooltip(z.prognose); GameTooltip:Show() end)
@@ -434,7 +447,7 @@ local function setzeKarte(z, e)
     if n > 0 then sym[#sym + 1] = { o = o, n = n } end
   end
   local symbole = #sym + (e.prognose and 1 or 0)
-  local platz = 292 - (symbole > 0 and (4 + symbole * 14 - 2) or 0)
+  local platz = 292 - (symbole > 0 and (4 + symbole * 19 - 2) or 0)
   local breit = (z.name.GetUnboundedStringWidth and z.name:GetUnboundedStringWidth()) or z.name:GetStringWidth() or platz
   z.name:SetWidth(math.min(platz, math.ceil(breit) + 1))
   for k, rf in ipairs(z.orte) do
@@ -442,20 +455,24 @@ local function setzeKarte(z, e)
     if s then
       rf.t:SetTexture(s.o.tex)
       rf.zeile = s.n .. " " .. s.o.titel
-      rf:ClearAllPoints(); rf:SetPoint("LEFT", z.name, "RIGHT", 4 + (k - 1) * 14, 0); rf:Show()
+      rf:ClearAllPoints(); rf:SetPoint("LEFT", z.name, "RIGHT", 5 + (k - 1) * 19, 0); rf:Show()
     else rf:Hide() end
   end
   z.prognose = e.prognose
   if e.prognose then
-    z.uhr:ClearAllPoints(); z.uhr:SetPoint("LEFT", z.name, "RIGHT", 4 + #sym * 14, 0); z.uhr:Show()
+    z.uhr:ClearAllPoints(); z.uhr:SetPoint("LEFT", z.name, "RIGHT", 5 + #sym * 19, 0); z.uhr:Show()
   else z.uhr:Hide() end
   z.betrag:SetText(e.betrag or "")
   z.zeile2:SetText(e.zeile2 or "")
   -- Aktions-Knopf nur am offenen AH und nur, wenn die Ware da ist (Einstellen: in der Tasche)
   local a = e.aktion
   if a and GF.ah and (a.art ~= "post" or (GF.inTasche and GF.inTasche(a.id))) then
-    local c = a.art == "cancel" and F.orange or F.gruen
-    z.aktion.a = a; z.aktion.t:SetText(a.text); z.aktion.t:SetTextColor(c[1], c[2], c[3])
+    local c = (a.art == "cancel" and F.orange) or (a.art == "buy" and F.lila) or F.gruen
+    local txt = a.text
+    -- Kaufen: nach Klick 1 steht der echte Preis da -> Klick 2 bestaetigt
+    local k = GF.kaufLauf
+    if a.art == "buy" and k and k.id == a.id and k.unit then txt = "OK " .. GF.geld(k.total or k.unit * k.n); c = F.gold end
+    z.aktion.a = a; z.aktion.t:SetText(txt); z.aktion.t:SetTextColor(c[1], c[2], c[3])
     z.aktion.bg:SetColorTexture(c[1], c[2], c[3], 0.18); z.aktion:Show()
     z.zeile2:SetWidth(INNEN - 48 - 88)
   else
@@ -660,9 +677,9 @@ local function wannKurz(e)
   local g = e.grund or ""
   if g:find("steigt") then return "steigt" end
   if g:find("fällt") then return "fällt" end
-  if g:find("unter") then return "tief" end
+  if g:find("unter") then return "Preis tief" end
   local tf = GF.tagesfenster()
-  if tf then local h = tonumber(date("%H")); return (h < tf.vVon and "ab " or "mrg ") .. tf.vVon end
+  if tf then local h = tonumber(date("%H")); return (h < tf.vVon and "ab " or "mrg ") .. tf.vVon .. " Uhr" end
   return ""
 end
 local function zeitKurz(id, art)
@@ -700,7 +717,7 @@ end
 -- Qualität und Risiko haben noch keine Regeln: bis dahin landet alles hier.
 local function standardDaten()
   local verkauftGesehen = {}
-  local d = { jetzt = {}, spaeter = {}, warte = {}, kauf = {}, aufk = {}, scan = {} }
+  local d = { jetzt = {}, spaeter = {}, warte = {}, kauf = {}, aufk = {}, scan = {}, ahL = {}, ahWert = 0, ahGewinn = 0, haltWert = 0 }
   local posN = {}
   for _, p in ipairs(GF.positionen()) do
     posN[p.id] = p.n
@@ -739,7 +756,13 @@ local function standardDaten()
         end
         e.ton = (pl.stop or pl.abbrechen) and F.orange or nil
         e.zeile2 = mit(verb((pl.stop or pl.abbrechen) and "orange" or "gruen", (pl.abbrechen and "Abbrechen, neu für " or "Einstellen für ") .. GF.geld(pl.preis)), warum)
-        d.jetzt[#d.jetzt + 1] = e
+        if pl.abbrechen then
+          -- 2.52: Ware im AH steht im Unter-Reiter „Auktionshaus“
+          e.orte = { ah = p.imAH or p.n }
+          d.ahL[#d.ahL + 1] = e; d.ahWert = d.ahWert + math.floor((p.ahPreis or 0) * 0.95 * (p.imAH or 0)); d.ahGewinn = d.ahGewinn + gewinn
+        else
+          d.jetzt[#d.jetzt + 1] = e
+        end
       elseif pl.verkauft then
         -- Verkauft: Das Gold kommt erst ca. 1 Std. nach dem Verkauf in den Briefkasten. Bis dahin nichts anzeigen,
         -- danach als Aufgabe unter „Verkaufen“. Zeitpunkt = erstes Mal als verkauft gesehen (je Charakter + Item).
@@ -760,7 +783,15 @@ local function standardDaten()
             pl.imAH and grau("warten, bis verkauft") or verb("orange", "unterboten – nach Ablauf neu einstellen"))
         else e.zeile2 = mit(verb("blau", "Halten bis " .. GF.geld(p.ziel)), grau("Gold Forever meldet sich")) end
         if not pl.post then e.prognose = GF.prognose(p.id, p) end
-        d.spaeter[#d.spaeter + 1] = e
+        if pl.imAH or pl.kurz == "im AH, unterboten" then
+          if pl.kurz == "im AH, unterboten" then e.ton = F.orange end
+          if (p.imAH or 0) > 0 then e.n = p.imAH; e.orte = { ah = p.imAH } end
+          d.ahL[#d.ahL + 1] = e; d.ahWert = d.ahWert + math.floor((p.ahPreis or 0) * 0.95 * (p.imAH or 0)); d.ahGewinn = d.ahGewinn + gewinn
+        else
+          local li2 = p.i or GF.info(p.id)
+          e.aktWert = math.floor((GF.wert(li2) or 0) * p.n); d.haltWert = d.haltWert + e.aktWert
+          d.spaeter[#d.spaeter + 1] = e
+        end
       end
     end
   end
@@ -787,6 +818,14 @@ local function standardDaten()
       local z = GF.zeit(id) or {}
       local tf = GF.tagesfenster()
       local grenze = i and i.p and math.max(i.p * 1.15, i.p * (1 + ((tf and tf.spanne) or 0) / 100) * 1.05, z.q3 or 0)
+      local erl = math.floor(x.preis * 0.95 * x.n)
+      d.ahWert = d.ahWert + erl; d.ahGewinn = d.ahGewinn + erl
+      if not (i and i.p and i.p > 0 and x.preis > grenze) then
+        -- liegt normal im AH
+        d.ahL[#d.ahL + 1] = { id = id, n = x.n, wert = erl, betrag = H.hell .. betrag(erl) .. ENDE, orte = { ah = x.n },
+          zeile2 = mit(verb("blau", "Liegt im AH für " .. GF.geld(x.preis)), grau("warten, bis verkauft")),
+          hinweis = x.n .. " Stück im AH für je " .. GF.geld(x.preis) .. ". Nach Gebühr ca. " .. GF.geld(erl) .. "." }
+      end
       if i and i.p and i.p > 0 and x.preis > grenze then
         local neu = math.max(1, i.p - 1)
         local e = { id = id, n = x.n, wert = math.floor(neu * 0.95 * x.n), betrag = H.hell .. betrag(math.floor(neu * 0.95 * x.n)) .. ENDE,
@@ -794,8 +833,7 @@ local function standardDaten()
           zeile2 = mit(verb("orange", "Abbrechen, neu für " .. GF.geld(neu)), grau("dein Preis " .. GF.geld(x.preis) .. " – unterboten")),
           aktion = { art = "cancel", id = id, text = "Abbrechen", tipp = "Gold Forever bricht deine teuerste Auktion dieses Items ab; die Ware kommt per Post zurück." },
           hinweis = "Deine Auktion für " .. GF.geld(x.preis) .. " ist unterboten – günstigstes Angebot " .. GF.geld(i.p) .. ". Auch zum Tageshoch lag der Preis nicht so hoch (höchstens ~" .. GF.geld(math.floor(grenze)) .. "). In TSM „Meine Auktionen“ abbrechen und für " .. GF.geld(neu) .. " neu einstellen (Einstellgebühr ist dann weg)." }
-        if not i.ahGeprueft then e.scan = true; d.scan[#d.scan + 1] = id end
-        d.jetzt[#d.jetzt + 1] = e
+        d.ahL[#d.ahL + 1] = e
       end
     end
   end
@@ -821,7 +859,14 @@ local function standardDaten()
   for _, v in ipairs(GF.warteListe()) do
     local n = v.n - (posN[v.id] or 0)
     if n > 0 and not GF.raid(v.id) then
-      d.warte[#d.warte + 1] = { id = v.id, n = n, wert = math.floor(v.w * n), x = wannKurz(v.e), weg = true, hinweis = v.e.grund, prognose = GF.prognose(v.id) }
+      -- Kachel-Text (2.52, Wunsch Alex: „tief“/„ab 9“ war unverständlich): „Preis tief“ = gerade unter üblich, warten;
+      -- „ab 9 Uhr“ = dann ist meist Tageshoch, dann einstellen; „steigt“/„fällt“ = aktueller Trend
+      local wk = wannKurz(v.e)
+      local erkl = (wk == "Preis tief" and "Warten: Der Preis liegt gerade unter üblich – Gold Forever meldet sich, wenn er zurück ist.")
+        or (wk:find("Uhr") and ("Warten bis " .. wk:gsub("mrg", "morgen") .. ": dann ist meist Tageshoch – erst dann einstellen."))
+        or (wk == "steigt" and "Warten: Der Preis steigt gerade.") or ""
+      d.warte[#d.warte + 1] = { id = v.id, n = n, wert = math.floor(v.w * n), x = wk, weg = true, hinweis = erkl .. (erkl ~= "" and "\n" or "") .. (v.e.grund or ""), prognose = GF.prognose(v.id) }
+      d.haltWert = d.haltWert + math.floor(v.w * n)
     end
   end
   -- Dringendes (orange) oben, Ware nur in der Bank unten, sonst nach Wert
@@ -830,9 +875,20 @@ local function standardDaten()
     if (a.bank and true or false) ~= (c.bank and true or false) then return not a.bank end
     return (a.wert or 0) > (c.wert or 0)
   end)
-  table.sort(d.warte, function(a, c) return a.wert > c.wert end)
-  -- Halten: meister Gewinn zuerst (oben die Top 5, Rest aufklappbar)
-  table.sort(d.spaeter, function(a, c) return (a.wert or 0) > (c.wert or 0) end)
+  -- Halten sortieren (2.52): Gewinn absteigend (Standard), Gewinn aufsteigend oder A–Z
+  local hs = GoldForeverDB.haltSort or "ab"
+  local function nm(e) return itemName(e.id) or "" end
+  local function sortier(a, c)
+    if hs == "az" then return nm(a) < nm(c) end
+    if hs == "auf" then return (a.wert or 0) < (c.wert or 0) end
+    return (a.wert or 0) > (c.wert or 0)
+  end
+  table.sort(d.warte, sortier)
+  table.sort(d.spaeter, sortier)
+  table.sort(d.ahL, function(a, c)
+    if (a.ton ~= nil) ~= (c.ton ~= nil) then return a.ton ~= nil end
+    return (a.wert or 0) > (c.wert or 0)
+  end)
 
   -- Einkaufen: Budget-Plan (Raid-Vorrat steht im Reiter „Raid & Events")
   local P = (GF.ah and GF.ah.plan) or GF.budgetPlan()
@@ -845,6 +901,14 @@ local function standardDaten()
   for _, x in ipairs(P.deals) do if not GF.ausgeblendet(x.id) then deals[#deals + 1] = x end end
   table.sort(deals, function(x, y) if zuTeuer(x) ~= zuTeuer(y) then return not zuTeuer(x) end; return false end)
   d.kaufListe = {}
+  -- 2.52: Unterbieter-Schnäppchen ganz oben (1–3 Stück weit unter üblich, Rest des Marktes normal)
+  for _, u in ipairs(GF.unterbieterListe()) do
+    d.kauf[#d.kauf + 1] = { id = u.id, n = u.n, betrag = plusMinus(u.gewinn), weg = true,
+      hinweis = "Unterbieter: jemand bietet " .. u.n .. " Stück für bis " .. GF.geld(u.max) .. " an, üblich ist " .. GF.geld(u.R) .. ".\nAufkaufen und für " .. GF.geld(u.neu) .. " neu einstellen (nach Gebühr ca. +" .. GF.geld(u.gewinn) .. ").",
+      zeile2 = mit(verb("lila", "Aufkaufen"), grau("Unterbieter · neu für " .. GF.geld(u.neu))),
+      aktion = GF.istRohstoff(u.id) and { art = "buy", id = u.id, n = u.n, max = u.max, text = "Kaufen " .. u.n .. "×",
+        tipp = "Klick 1: Preis anfragen, Klick 2 („OK …“): kaufen. Danach unter Verkaufen für " .. GF.geld(u.neu) .. " einstellen." } or nil }
+  end
   for _, x in ipairs(deals) do
     local g2 = GF.gekauft(x.id)
     local live = GF.kaufPreis(x.id, math.max(1, x.menge - g2))
@@ -867,6 +931,8 @@ local function standardDaten()
         local lv = GF.live[x.id]
         local nurVoll = lv and lv.voll
         d.kauf[#d.kauf + 1] = { id = x.id, n = rest, betrag = plusMinus(math.floor(stueckGewinn * rest)), weg = true, gekauft = schon > 0, scan = nurVoll,
+          aktion = GF.istRohstoff(x.id) and { art = "buy", id = x.id, n = rest, max = x.maxKauf, text = "Kaufen " .. rest .. "×",
+            tipp = "Klick 1: Gold Forever fragt den echten Preis für " .. rest .. " Stück an. Klick 2 („OK …“): kaufen. Liegt der Preis über " .. GF.geld(x.maxKauf) .. " je Stück, bricht Gold Forever selbst ab." } or nil,
           hinweis = hinweis .. (nurVoll and "\nPreis nur aus dem Vollscan – billige Angebote sind oft schnell weg. Vor dem Kauf suchen (Klick auf die Karte)." or ""),
           zeile2 = mit(verb("lila", "Kaufen bis " .. GF.geld(x.maxKauf)), mit(schon > 0 and grau(schon .. " schon gekauft") or "",
             nurVoll and verb("orange", "aus Vollscan – vor dem Kauf suchen") or grau(live and ("im AH gerade " .. GF.geld(live)) or "jetzt, solange so günstig"))) }
@@ -1019,7 +1085,9 @@ local REITER = { { "standard", "Standard" }, { "qualitaet", "Qualität" }, { "ra
 -- Standard
 function ANSICHTEN.standard(v, s, r)
   local d = s
-  local zahl = { verk = #d.jetzt, halt = #d.spaeter + #d.warte, kauf = #(d.kaufListe or {}), sprung = #d.aufk }
+  local zahl = { verk = #d.jetzt, halt = #d.spaeter + #d.warte, ah = #d.ahL, kauf = #(d.kaufListe or {}) + #(d.kauf or {}) - #(d.kaufListe or {}) }
+  -- Badge orange, wenn im AH etwas zu tun ist (unterboten / abbrechen)
+  local ahTun = 0; for _, e in ipairs(d.ahL) do if e.ton then ahTun = ahTun + 1 end end
   local wahl = GoldForeverDB.unter
   if not zahl[wahl or ""] then wahl = "verk" end
   v.unter.wahl = wahl
@@ -1029,6 +1097,10 @@ function ANSICHTEN.standard(v, s, r)
     b.t:SetTextColor(c[1], c[2], c[3]); b.strich:SetShown(an)
     b.bg:SetColorTexture(b.farbe[1], b.farbe[2], b.farbe[3], an and 0.10 or 0.03)
     b.badge:SetShown(n > 0); b.halo:SetShown(n > 0)
+    if b.key == "ah" then
+      local c2 = ahTun > 0 and F.orange or b.farbe
+      b.badge:SetColorTexture(c2[1], c2[2], c2[3], 1); b.halo:SetColorTexture(c2[1], c2[2], c2[3], 0.35)
+    end
     b.badge:SetWidth(n >= 100 and 30 or n >= 10 and 24 or 18); b.halo:SetWidth(b.badge:GetWidth() + 6)
     b.zahl:SetText(n > 0 and tostring(n) or "")
   end
@@ -1038,6 +1110,14 @@ function ANSICHTEN.standard(v, s, r)
     scanText = ns .. " von " .. #d.jetzt .. (ns == 1 and " Preis" or " Preisen") .. " noch nicht im AH geprüft  ·" })
   local na = GF.anzahlAusgeblendet()
   kopfSetzen(v.spaeter, "Halten", #d.spaeter + #d.warte)
+  v.spaeter.rechts:SetText("")
+  v.haltInfo:SetText(H.grau .. "Wert jetzt " .. ENDE .. H.hell .. betrag(d.haltWert) .. ENDE)
+  local SORT = { ab = "Gewinn hoch", auf = "Gewinn tief", az = "A–Z" }
+  v.haltSort:Text(SORT[GoldForeverDB.haltSort or "ab"] or "Gewinn hoch")
+  v.haltSort:ClearAllPoints()
+  if v.tsmHalten:IsShown() then v.haltSort:SetPoint("RIGHT", v.tsmHalten, "LEFT", -12, 0)
+  elseif na > 0 then v.haltSort:SetPoint("RIGHT", v.einblenden, "LEFT", -12, 0)
+  else v.haltSort:SetPoint("TOPRIGHT", 0, -2) end
   v.einblenden:SetShown(na > 0); v.einblenden:Text(na .. " ausgeblendet · einblenden")
   fuelle(v.spaeter, d.spaeter, { leer = (#d.warte == 0) and "Nichts zu halten." or nil })
   fuelleKacheln(v.spaeter, d.warte)
@@ -1050,14 +1130,20 @@ function ANSICHTEN.standard(v, s, r)
   if na > 0 then v.tsmHalten:SetPoint("RIGHT", v.einblenden, "LEFT", -12, 0) else v.tsmHalten:SetPoint("TOPRIGHT", 0, -2) end
   kopfSetzen(v.kauf, "Kaufen", #d.kauf)
   v.tsm:SetShown(#d.kaufListe > 0)
+  v.voll:SetShown(GF.ah ~= nil); v.voll:ClearAllPoints()
+  if #d.kaufListe > 0 then v.voll:SetPoint("RIGHT", v.tsm, "LEFT", -12, 0) else v.voll:SetPoint("TOPRIGHT", 0, -2) end
+  local ab = GF.vollscanBereitAb and GF.vollscanBereitAb()
+  v.voll:Text(ab and ("Vollscan ab " .. date("%H:%M", ab)) or "Vollscan")
   fuelle(v.kauf, d.kauf, { leer = keinKaufText() })
-  kopfSetzen(v.aufk, "Preissprung", #d.aufk)
-  fuelle(v.aufk, {}, { leer = (#d.aufk == 0) and "Gerade kein Preissprung." or nil })
-  fuelleKacheln(v.aufk, d.aufk)
+  -- Auktionshaus (2.52): eigene Auktionen mit Wert und erwartetem Gewinn
+  kopfSetzen(v.ah, "Auktionshaus", #d.ahL, #d.ahL > 0 and (H.grau .. "Erlös " .. ENDE .. H.hell .. betrag(d.ahWert) .. ENDE .. H.grau .. "  ·  Gewinn " .. ENDE .. plusMinus(d.ahGewinn)) or nil)
+  fuelle(v.ah, d.ahL, { leer = "Nichts im Auktionshaus. („Meine Auktionen“ wird beim Öffnen des AH geladen.)" })
+  -- Preissprung: kein eigener Reiter mehr – eigene Ware mit Preissprung steht orange unter Verkaufen
+  v.aufk:Hide()
   -- nur der gewählte Abschnitt ist sichtbar
-  v.jetzt:SetShown(wahl == "verk"); v.spaeter:SetShown(wahl == "halt"); v.kauf:SetShown(wahl == "kauf"); v.aufk:SetShown(wahl == "sprung")
+  v.jetzt:SetShown(wahl == "verk"); v.spaeter:SetShown(wahl == "halt"); v.kauf:SetShown(wahl == "kauf"); v.ah:SetShown(wahl == "ah")
   GF.angezeigteKaeufe = d.kaufListe
-  return stapeln(v, { v.unter, v.jetzt, v.spaeter, v.kauf, v.aufk })
+  return stapeln(v, { v.unter, v.jetzt, v.spaeter, v.ah, v.kauf })
 end
 
 -- Qualität / Risiko: Platzhalter, bis der Regel-Chat die Einteilung festlegt (claude/reiter-kategorien.md)
@@ -1393,10 +1479,12 @@ function GF.aktualisieren()
   local okR, r = pcall(raidDaten); if not okR then r = { kauf = {}, ware = {}, event = {}, jetzt = 0, kaufListe = {}, danach = {}, start = "?", verkTage = "", kaufTage = "" } end
   zahlen.standard, zahlen.raid, zahlen.zeit = #s.jetzt, r.jetzt, time()
   -- Kopf
-  local tb = GF.tagesbilanz()
+  local ein, aus, prof = GF.handelHeute()
   fenster.k.gold.wert:SetText(H.hell .. betrag(GetMoney()) .. ENDE)
-  fenster.k.heute.wert:SetText(tb and plusMinus(tb) or (H.grau .. "—" .. ENDE))
-  fenster.k.budget.wert:SetText(H.hell .. betrag(s.budget or GF.budgetPlan().budget) .. ENDE)
+  fenster.k.budget.wert:SetText(H.lila .. betrag(s.budget or GF.budgetPlan().budget) .. ENDE)
+  fenster.k.ein.wert:SetText(ein > 0 and (H.gruen .. betrag(ein) .. ENDE) or (H.grau .. "—" .. ENDE))
+  fenster.k.profit.wert:SetText((ein > 0 or aus > 0) and plusMinus(prof) or (H.grau .. "—" .. ENDE))
+  fenster.k.profit.tipp = "Einnahmen " .. GF.geld(ein) .. " minus Einkäufe " .. GF.geld(aus) .. " (heute). Gold seit Tagesbeginn: " .. GF.geld(GF.tagesbilanz() or 0) .. ". Klick: Bilanz."
   fenster.wer:SetText(H.grau .. "·  " .. ENDE .. H.hell .. GF.charKey() .. ENDE .. (GF.ah and (H.grau .. "  ·  Einkaufsliste" .. ENDE) or ""))
   for _, rr in ipairs(REITER) do
     local b = fenster.reiter[rr[1]]
@@ -1428,7 +1516,7 @@ local function baueAnsichten(kind)
   -- Unter-Reiter mit leuchtender Zahl (2.50, Befund 4)
   v.unter = CreateFrame("Frame", nil, v); v.unter:SetSize(INNEN, 28); v.unter.hoehe = 28
   v.unter.b = {}
-  local UNTER = { { "verk", "Verkaufen", F.gruen }, { "halt", "Halten", F.blau }, { "kauf", "Kaufen", F.lila }, { "sprung", "Preissprung", F.orange } }
+  local UNTER = { { "verk", "Verkaufen", F.gruen }, { "halt", "Halten", F.blau }, { "ah", "Auktionshaus", F.gold }, { "kauf", "Kaufen", F.lila } }
   for k, u in ipairs(UNTER) do
     local b = CreateFrame("Button", nil, v.unter); b:SetSize(103, 28); b:SetPoint("TOPLEFT", (k - 1) * 111, 0)
     b.key, b.farbe = u[1], u[3]
@@ -1463,9 +1551,20 @@ local function baueAnsichten(kind)
   v.tsmHalten = link(v.spaeter, 10, function() if v.haltenIds and #v.haltenIds > 0 then sucheText((namenListe(v.haltenIds))) end end,
     { "Halten-Ware in TSM suchen", "Zuerst ins TSM-Suchfeld klicken, dann hier. So siehst du, ob deine Ware unterboten ist." })
   v.tsmHalten:SetPoint("TOPRIGHT", 0, -2); v.tsmHalten:Text("In TSM suchen")
+  -- Halten: Gesamtwert + Sortierung (2.52)
+  v.haltInfo = text(v.spaeter, 10, F.grau); v.haltInfo:SetPoint("LEFT", v.spaeter.zahl, "RIGHT", 10, 0)
+  v.haltSort = link(v.spaeter, 10, function()
+    local nx = { ab = "auf", auf = "az", az = "ab" }
+    GoldForeverDB.haltSort = nx[GoldForeverDB.haltSort or "ab"]; GF.aktualisieren()
+  end, { "Sortierung wechseln", "Gewinn hoch → Gewinn tief → A–Z" })
+  v.haltSort:SetPoint("TOPRIGHT", 0, -2)
+  v.ah = abschnitt(v, F.gold, 20)
   v.kauf = abschnitt(v, F.lila, 10)
   v.tsm = link(v.kauf, 10, function() pcall(inTsmSuchen) end, { "Ganzen Einkaufsplan in TSM suchen", "Zuerst ins TSM-Suchfeld klicken, dann hier." })
   v.tsm:SetPoint("TOPRIGHT", 0, -2); v.tsm:Text("In TSM suchen")
+  -- 2.52: Vollscan direkt unter Kaufen (am AH), mit Abklingzeit
+  v.voll = link(v.kauf, 10, function() GF.vollscanStarten(); C_Timer.After(1, function() GF.aktualisieren() end) end,
+    { "Vollscan", "Ganzes Auktionshaus einlesen (Blizzard erlaubt das alle 15 Min.). Die Kauf-Vorschläge rechnen sich danach neu. AH offen lassen, bis „gespeichert“ im Chat steht." })
   v.aufk = abschnitt(v, F.orange, 0, F.orange, 11)
   A.standard = v
   -- Qualität, Risiko (Platzhalter)
@@ -1703,16 +1802,25 @@ local function baue()
   }
   symbolePlatzieren()
 
-  -- Kennzahlen (y 64, 3 × 140)
+  -- Kennzahlen (y 64, 4 × 103): Gold · Budget · Einnahmen · Profit (2.52, Wunsch Alex)
   fenster.k = {}
-  for k, n in ipairs({ { "gold", "Gold" }, { "heute", "Seit heute" }, { "budget", "Kaufbudget" } }) do
-    local kz = kennzahl(fenster, 140, 44); kz:SetPoint("TOPLEFT", RAND + (k - 1) * 148, -64); kz.oben:SetText(n[2])
+  local KZ = {
+    { "gold", "Gold", "Gold auf diesem Charakter." },
+    { "budget", "Kaufbudget", "So viel darf Gold Forever für Einkäufe einplanen (Anteil deines Golds)." },
+    { "ein", "Einnahmen heute", "Erlöse aus AH-Verkäufen heute (aus der Post, nach Gebühr)." },
+    { "profit", "Profit heute", "Einnahmen minus Einkäufe heute. Klick: Bilanz." },
+  }
+  for k, n in ipairs(KZ) do
+    local kz = kennzahl(fenster, 103, 44); kz:SetPoint("TOPLEFT", RAND + (k - 1) * 111, -64); kz.oben:SetText(n[2])
+    kz.tipp = n[3]
+    kz:SetScript("OnEnter", function(self) self.bg:SetColorTexture(1, 1, 1, 0.06); GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine(n[2]); GameTooltip:AddLine(self.tipp, F.grau[1], F.grau[2], F.grau[3], true); GameTooltip:Show() end)
+    kz:SetScript("OnLeave", function(self) self.bg:SetColorTexture(self.farbe and self.farbe[1] or 1, self.farbe and self.farbe[2] or 1, self.farbe and self.farbe[3] or 1, self.farbe and 0.12 or 0.03); GameTooltip:Hide() end)
     fenster.k[n[1]] = kz
   end
-  fenster.k.heute:SetScript("OnClick", function() zeigeAnsicht("bilanz") end)
-  fenster.k.heute:SetScript("OnEnter", function(self) self.bg:SetColorTexture(1, 1, 1, 0.06); GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Klick: Bilanz öffnen"); GameTooltip:Show() end)
-  fenster.k.heute:SetScript("OnLeave", function(self) self.bg:SetColorTexture(1, 1, 1, 0.03); GameTooltip:Hide() end)
-  fenster.k.gold:EnableMouse(false); fenster.k.budget:EnableMouse(false)
+  -- Budget farbig hinterlegt (lila = Kaufen)
+  fenster.k.budget.farbe = F.lila; fenster.k.budget.bg:SetColorTexture(F.lila[1], F.lila[2], F.lila[3], 0.12)
+  fenster.k.profit:SetScript("OnClick", function() zeigeAnsicht("bilanz") end)
+  fenster.k.heute = fenster.k.profit -- alter Name (Bilanz-Code)
 
   -- Reiter (y 120, 4 × 103) und Linie (y 144)
   local linie = fenster:CreateTexture(nil, "ARTWORK"); linie:SetColorTexture(1, 1, 1, 0.08); linie:SetHeight(1)

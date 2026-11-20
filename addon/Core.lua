@@ -129,9 +129,23 @@ end
 --   sonst: min(Regions-Verkaufsschnitt, Marktwert)
 -- Grund: auf dem eigenen Realm liegen viele Items dauerhaft unter dem Regions-Ø (z. B. Donnernder Gluecksbringer
 -- Region 32s 95c, Realm 25s) – gegen den Regions-Ø waeren sie scheinbar immer "guenstig".
+-- Realm-Daten direkt aus GitHub (2.52): GoldForeverRealm.i[id] = {m, n, m0, tr3, fall, vt, vp, st}
+-- m = Median der Tagesmediane (bis 7 Tage, alle Auktionen des Realms), m0 = letzte 24 Std.
+-- Auswertung Woche 1: gegen diesen Wert lagen Verlust-Kaeufe im Median bei 100 %, Gewinn-Kaeufe bei 78 %.
+function GF.realm(id)
+  local R = GoldForeverRealm
+  local r = R and R.i and R.i[tonumber(id)]
+  if not r then return nil end
+  return { m = (r[1] or 0) > 0 and r[1] or nil, n = r[2] or 0, m0 = (r[3] or 0) > 0 and r[3] or nil, tr3 = r[4] or 0,
+    fall = r[5] or 0, vt = (r[6] or 0) > 0 and r[6] or nil, vp = (r[7] or 0) > 0 and r[7] or nil, st = r[8] or 0 }
+end
+function GF.realmAlter() local R = GoldForeverRealm; return R and R.t and (time() - R.t) or nil end
+
 function GF.referenz(id, i)
   i = i or GF.info(id); if not i then return nil end
   local z = (D().zeit or {})[tonumber(id)]
+  local rl = GF.realm(id)
+  if rl and rl.m and rl.n >= 3 then return rl.m, "realm", z end
   if z and z.m and (z.n or 0) >= 6 then return z.m, "realm", z end
   if i.r and i.r > 0 then return math.min(i.r, (i.mw and i.mw > 0) and i.mw or i.r), "region", z end
   return nil, nil, z
@@ -223,6 +237,12 @@ function GF.faktor(x) return (string.format("×%.1f", x):gsub("%.", ",")) end
 -- Faellt der Preis seit Tagen? (rollende 24-Std.-Fenster aus den GitHub-Kennzahlen, Tagesrhythmus zaehlt nicht)
 -- Liefert einen kurzen Text oder nil. 2.51: sperrt Kaeufe, bricht unterbotene Ware frueher ab, Verlustbremse.
 function GF.faelltTage(id)
+  local rl = GF.realm(id)
+  if rl and rl.n >= 3 then
+    if rl.fall >= 2 then return "seit " .. rl.fall .. " Tagen" end
+    if rl.tr3 <= -10 then return rl.tr3 .. " % in 3 Tagen" end
+    return nil
+  end
   local z = (D().zeit or {})[tonumber(id)]
   if not z then return nil end
   if (z.rfall or 0) >= 2 then return "seit " .. z.rfall .. " Tagen" end
@@ -265,7 +285,11 @@ function GF.einstellen(i)
   -- Ausreisser abfangen – ausser bei Aufkaeufer-Preis: dann knapp unter ihm einstellen
   if anker > 0 and i.p > anker * 2 and not (i.id and GF.aufkaeufer(i.id, i)) then preis = math.floor(anker * 1.2) end
   if i.vb then preis = math.min(preis, i.vb - 1) end
-  local dauer = ((i.u or 0) >= 200 and "12 Std.") or ((i.u or 0) >= 50 and "24 Std.") or "48 Std."
+  -- 2.52 (Befund 26): Forever hat die Classic-Laufzeiten 2 / 8 / 24 Std. (Stufe 1/2/3). Standard 24 Std.,
+  -- nur sehr schnell verkaufte Ware 8 Std. (Gebuehr kleiner). 2 Std. nie.
+  local rl = i.id and GF.realm(i.id)
+  local proTag = math.max(i.u or 0, rl and rl.vt or 0)
+  local dauer = (proTag >= 500) and "8 Std." or "24 Std."
   return preis, dauer
 end
 
@@ -388,7 +412,7 @@ local function basisEmpfehlung(id, i, eigen)
     e.still = true; return e
   end
   local abw = math.floor((q - 1) * 100 + 0.5)
-  local wo = (quelle == "realm") and "üblich" or "Ø"
+  local wo = "üblich" -- 2.52 (Befund 25): immer „üblich“; Quelle (Realm/Region) steht im Tooltip
   -- Eigene Ware in einem Markt, der seit Tagen faellt: Warten kostet nur – jetzt verkaufen
   if z and z.tl and z.tl <= -10 and abw < 25 and hat then
     return E("verk", "Markt fällt seit Tagen (" .. z.tl .. " %) – lieber jetzt verkaufen")
@@ -649,7 +673,10 @@ function GF.budgetPlan()
       if stueck >= math.max(1, i.p * 0.1) then
         -- schon gekaufte (offene) Menge abziehen: von 10 vorgeschlagenen 3 gekauft -> noch 7
         local pos = GF.position(id)
-        local markt = math.max(1, math.floor((i.u or 0) * 0.05)) - (pos and pos.n or 0)
+        -- 2.52: Absatz = kleinerer Wert aus Region (TSM) und Realm-Verkaeufen (GitHub), 5 % davon
+        local rl = GF.realm(id)
+        local absatz = (rl and rl.vt) and math.min(i.u or rl.vt, rl.vt) or (i.u or 0)
+        local markt = math.max(1, math.floor(absatz * 0.05)) - (pos and pos.n or 0)
         local maxKauf = math.floor(netto / 1.1)
         -- 2.51: nur so viel planen, wie es laut Suche/Vollscan bis zum Hoechstpreis gibt (vorher nur 5 Stueck geprueft)
         local verfuegbar = GF.mengeBis(id, maxKauf)
@@ -814,6 +841,7 @@ end
 -- Erwarteter Gewinn einer Position (2.50, Befund 20): realistischer Verkaufspreis statt des eigenen Angebotspreises.
 -- Liegt der eigene Preis (oder das Ziel) ueber min(ueblich, TSM-Marktwert), zaehlt dieser Wert; der eigene Preis ist nur der Bestfall.
 function GF.realPreis(p, pl)
+  if p.verkauftPreis then return p.verkauftPreis end -- schon verkauft: echter Preis (Befund 28)
   if pl and pl.preis then return pl.preis end
   local basis = p.ahPreis or p.ziel
   if not basis then return nil end
@@ -888,7 +916,7 @@ local function tooltipZeilen(tt, id)
   local R, quelle = GF.referenz(id, i)
   local kopf = GOLD .. "Gold Forever" .. ENDE
   if i.p or i.r then
-    kopf = kopf .. GRAU .. "   " .. ENDE .. WEISS .. GF.geld(i.p) .. ENDE .. GRAU .. (quelle == "realm" and "  ·  üblich " or "  ·  Ø ") .. ENDE .. WEISS .. GF.geld(R or i.r) .. ENDE
+    kopf = kopf .. GRAU .. "   " .. ENDE .. WEISS .. GF.geld(i.p) .. ENDE .. GRAU .. (quelle == "realm" and "  ·  üblich " or "  ·  üblich (Region) ") .. ENDE .. WEISS .. GF.geld(R or i.r) .. ENDE
   end
   tt:AddDoubleLine(kopf, (i.ahLive and (GRUEN .. "AH live" .. ENDE) or "") .. (i.u and (GRAU .. (i.ahLive and " · " or "") .. math.floor(i.u + 0.5) .. "/Tag" .. ENDE) or ""))
   if not e then return end
@@ -994,6 +1022,18 @@ local function tagPruefen()
   GoldForeverDB.tag = GoldForeverDB.tag or {}
   local heute = date("%Y-%m-%d"); local t = GoldForeverDB.tag[charKey()]
   if not t or t.d ~= heute then GoldForeverDB.tag[charKey()] = { d = heute, start = GetMoney() } end
+end
+-- Einnahmen/Ausgaben/Profit aus dem Bilanz-Buch (2.52, Kopf des Fensters): heute bzw. seit Sekunden
+function GF.handelHeute(seit)
+  local t = date("*t")
+  local ab = seit and (time() - seit) or (time() - (t.hour * 3600 + t.min * 60 + t.sec))
+  local ein, aus, ich = 0, 0, charKey()
+  for _, x in ipairs((GoldForeverDB.bilanz and GoldForeverDB.bilanz.buch) or {}) do
+    if x.t >= ab and (x.char == nil or x.char == ich) then
+      if x.art == "verk" then ein = ein + (x.betrag or 0) elseif x.art == "kauf" then aus = aus - (x.betrag or 0) end
+    end
+  end
+  return ein, aus, ein - aus
 end
 function GF.tagesbilanz()
   local t = GoldForeverDB.tag and GoldForeverDB.tag[charKey()]
@@ -1124,7 +1164,7 @@ local function ahAuf()
   if GoldForever_AH then GoldForever_AH(true) end
 end
 local function ahZu()
-  GF.ah = nil
+  GF.ah = nil; GF.kaufLauf = nil
   if GoldForever_AH then GoldForever_AH(false) end
 end
 -- Seit dem Oeffnen des AH gekauft: aus den gebuchten Kaeufen (Commodities landen im Briefkasten,
@@ -1166,6 +1206,8 @@ end
 -- Liefert: vorgeschlagen?, Zielpreis pro Stueck (zu dem spaeter verkauft werden soll)
 local function zielPreis(i) return i and i.id and GF.referenz(i.id, i) or nil end
 local function kaufVorschlag(id)
+  local um = GF.unterbieterMerk and GF.unterbieterMerk[id]
+  if um and time() - um.t < 900 then return true, um.neu end
   if GF.ah and GF.ah.plan then for _, d in ipairs(GF.ah.plan.deals) do if d.id == id then return true, d.ziel end end end
   local ok, rp = pcall(GF.raidPlan)
   if ok and rp then for _, k in ipairs(rp.plan) do if k.id == id then return true, k.ziel end end end
@@ -1308,6 +1350,19 @@ local function postLesen()
   end
   -- alte Mail-Schluessel aufraeumen
   for key, t in pairs(b.post) do if time() - t > 40 * 86400 then b.post[key] = nil end end
+  -- 2.52 (Befund 29): Waren in der Post zaehlen. Gekaufte Ware, die weder in Tasche/Bank, im AH noch in der Post ist,
+  -- wurde verarbeitet/verbraucht (z. B. Roher Weisenfisch gekocht) – die Position wird dann geschlossen.
+  if GetInboxItem then
+    local items = {}
+    for k = 1, GetInboxNumItems() do
+      for a = 1, (ATTACHMENTS_MAX_RECEIVE or 16) do
+        local ok, _, iid, _, anz = pcall(GetInboxItem, k, a)
+        if ok and iid then items[iid] = (items[iid] or 0) + (anz or 1) end
+      end
+    end
+    GoldForeverDB.postWare = GoldForeverDB.postWare or {}
+    GoldForeverDB.postWare[charKey()] = { t = time(), items = items }
+  end
 end
 
 -- Offene Positionen: nach Vorschlag gekauft, noch nicht verkauft
@@ -1358,11 +1413,23 @@ function GF.positionen()
       local ahN, ahPreis = GF.imAH(id)
       p.imAH = math.min(p.n - p.da, ahN); p.ahPreis = ahPreis
       p.post = math.max(0, p.n - p.da - p.imAH)
+      -- Post gesehen (nach dem Kauf): was dort nicht liegt und nicht verkauft ist, ist verarbeitet/verbraucht
+      local pw = GoldForeverDB.postWare and GoldForeverDB.postWare[ich]
+      if p.post > 0 and pw and pw.t > p.seit then
+        local vkN = (GF.ahDaten().verkauft or {})[id] or 0
+        local weg = p.post - math.min(p.post, (pw.items[id] or 0) + vkN)
+        if weg > 0 then
+          p.kosten = p.kosten * (p.n - weg) / p.n
+          p.n = p.n - weg; p.post = p.post - weg; p.weg = weg
+        end
+      end
       -- schon verkauft (Gold wartet im Briefkasten)?
       local vk = (GF.ahDaten().verkauft or {})[id] or 0
       p.verkauftPost = math.min(p.post, vk)
+      if p.n <= 0 then p.aus = true end
+      p.verkauftPreis = p.verkauftPost > 0 and ((GF.ahDaten().vpreis or {})[id]) or nil
       p.i = i
-      liste[#liste + 1] = p
+      if not p.aus then liste[#liste + 1] = p end
     end
   end
   table.sort(liste, function(a, c) return a.seit > c.seit end)
@@ -1429,9 +1496,11 @@ local function verlustBremse(p, i, markt, istRaid)
     end
     if verlust >= 0.40 or (verlust >= 0.25 and bestaetigt()) then grund = pz .. " % unter Einkauf"
     elseif alter >= 12 * 3600 and verlust >= 0.15 and faellt(p.id) then grund = pz .. " % unter Einkauf und fällt weiter"
+    -- 2.52 (Auswertung Woche 1): Verlierer lagen fast alle in Maerkten, die ueber Tage fielen, und wurden zu lange gehalten
+    elseif alter >= 12 * 3600 and verlust >= 0.05 and GF.faelltTage(p.id) then grund = pz .. " % unter Einkauf, Markt fällt " .. GF.faelltTage(p.id)
     elseif alter >= 12 * 3600 and verlust > 0 then
       local zp = GF.referenz(p.id, i)
-      if zp and zp * 0.95 < p.ek then grund = "Durchschnittspreis ist gefallen, Ziel nicht mehr erreichbar" end
+      if zp and zp * 0.95 < p.ek then grund = "üblicher Preis ist gefallen, Ziel nicht mehr erreichbar" end
     end
   end
   if not grund then return nil end
@@ -1593,7 +1662,7 @@ end
 -- GoldForeverDB.imAH = {t = Zeit, items = {[itemID] = {n = Stueck, preis = guenstigster eigener Stueckpreis}}}
 local function eigeneAuktionen()
   if not (C_AuctionHouse and C_AuctionHouse.GetNumOwnedAuctions and C_AuctionHouse.GetOwnedAuctionInfo) then return end
-  local items, verkauft = {}, {}
+  local items, verkauft, vpreis = {}, {}, {}
   GF.ahAuktionen = {}
   for k = 1, C_AuctionHouse.GetNumOwnedAuctions() do
     local a = C_AuctionHouse.GetOwnedAuctionInfo(k)
@@ -1601,6 +1670,10 @@ local function eigeneAuktionen()
     if a and a.itemKey and a.itemKey.itemID and (a.status or 0) == 1 then
       local id = a.itemKey.itemID
       verkauft[id] = (verkauft[id] or 0) + (a.quantity or 1)
+      -- 2.52 (Befund 28): Verkaufspreis merken, damit der Gewinn mit dem echten Erloes rechnet, nicht mit dem Ziel
+      if a.buyoutAmount and a.buyoutAmount > 0 then
+        vpreis[id] = vpreis[id] or {}; local v = vpreis[id]; v.n = (v.n or 0) + (a.quantity or 1); v.summe = (v.summe or 0) + a.buyoutAmount * (a.quantity or 1)
+      end
     end
     if a and a.itemKey and a.itemKey.itemID and (a.status or 0) == 0 then
       local id = a.itemKey.itemID
@@ -1615,7 +1688,9 @@ local function eigeneAuktionen()
     end
   end
   GoldForeverDB.imAHc = GoldForeverDB.imAHc or {}
-  GoldForeverDB.imAHc[charKey()] = { t = time(), items = items, verkauft = verkauft }
+  local vp = {}
+  for id, v in pairs(vpreis) do vp[id] = math.floor(v.summe / v.n) end
+  GoldForeverDB.imAHc[charKey()] = { t = time(), items = items, verkauft = verkauft, vpreis = vp }
   if GF.aktualisieren then pcall(GF.aktualisieren) end
 end
 function GF.imAH(id)
@@ -1634,7 +1709,7 @@ end
 -- Ein Klick im Fenster = eine Auktion (Blizzard verlangt einen Klick je Auktion). TSM wird zum Verkaufen nicht gebraucht.
 GF.vorschlagPreis = {} -- [id] = {p, t}: Preis, mit dem Gold Forever gerade selbst eingestellt hat
 GF.ahAuktionen = {}    -- [id] = { {id = Auktions-ID, p, n} } aus „Meine Auktionen“
-local DAUER = { ["12 Std."] = 1, ["24 Std."] = 2, ["48 Std."] = 3 }
+local DAUER = { ["2 Std."] = 1, ["8 Std."] = 2, ["24 Std."] = 3 }
 local function taschenPlatz(id)
   if not (C_Container and C_Container.GetContainerNumSlots) then return nil end
   for b = 0, 5 do
@@ -1654,7 +1729,7 @@ function GF.einstellenJetzt(id, preis, menge, dauerText)
   if not b then return false, "nicht in der Tasche – erst aus Bank oder Post holen" end
   preis = math.max(1, math.floor(preis or 0))
   local loc = ItemLocation:CreateFromBagAndSlot(b, s)
-  local dauer = DAUER[dauerText or ""] or 2
+  local dauer = DAUER[dauerText or ""] or 3
   local status = C_AuctionHouse.GetItemCommodityStatus and C_AuctionHouse.GetItemCommodityStatus(loc)
   local rohstoff = Enum and Enum.ItemCommodityStatus and status == Enum.ItemCommodityStatus.Commodity
   GF.vorschlagPreis[id] = { p = preis, t = time() }
@@ -1690,6 +1765,81 @@ function GF.abbrechenJetzt(id)
   return ok, err, a
 end
 
+-- ---------------------------------------------------------------- Selbst kaufen (2.52)
+-- Rohstoffe (Commodities): Klick 1 fragt bei Blizzard den echten Gesamtpreis an (StartCommoditiesPurchase),
+-- Klick 2 bestaetigt – nur wenn der Stueckpreis nicht ueber dem Hoechstpreis aus dem Plan liegt.
+-- Einzel-Items brauchen eine Suche mit Auktions-ID: dafuer bleibt „Suchen“.
+GF.kaufLauf = nil -- {id, n, max, t, unit, total}
+function GF.kaufStarten(id, menge, maxPreis)
+  id = tonumber(id)
+  if not (GF.ah and C_AuctionHouse and C_AuctionHouse.StartCommoditiesPurchase) then return false, "das Auktionshaus ist nicht offen" end
+  local i = GF.info(id)
+  menge = math.max(1, math.floor(menge or 1))
+  local kosten = (GF.kaufPreis(id, menge) or maxPreis or 0) * menge
+  if GetMoney and kosten > GetMoney() then return false, "nicht genug Gold" end
+  GF.kaufLauf = { id = id, n = menge, max = maxPreis, t = time() }
+  local ok, err = pcall(C_AuctionHouse.StartCommoditiesPurchase, id, menge)
+  if not ok then GF.kaufLauf = nil; return false, err end
+  return true
+end
+function GF.kaufPreisDa(unit, total)
+  local k = GF.kaufLauf; if not k then return end
+  k.unit, k.total = unit, total
+  if k.max and unit and unit > k.max then
+    pcall(C_AuctionHouse.CancelCommoditiesPurchase)
+    GF.kaufLauf = nil
+    print(GOLD .. "Gold Forever:" .. ENDE .. " Kauf abgebrochen – im AH kostet es jetzt " .. GF.geld(unit) .. " je Stück, Höchstpreis " .. GF.geld(k.max) .. ". Das Tief ist vorbei.")
+  end
+  if GF.aktualisieren then pcall(GF.aktualisieren) end
+end
+function GF.kaufBestaetigen()
+  local k = GF.kaufLauf
+  if not (k and k.unit) then return false, "Preis noch nicht da – gleich noch einmal klicken" end
+  if time() - k.t > 50 then GF.kaufLauf = nil; return false, "Angebot abgelaufen – noch einmal „Kaufen“ klicken" end
+  local ok, err = pcall(C_AuctionHouse.ConfirmCommoditiesPurchase, k.id, k.n)
+  GF.kaufLauf = nil
+  return ok, err, k
+end
+-- Unterbieter-Schnaeppchen (2.52, Wunsch Alex): Bietet jemand nur 1–3 Stueck deutlich (>= 25 %) unter ueblich an
+-- und liegt der Rest des Marktes wieder normal, lohnt es, diese Stuecke selbst zu kaufen und zum normalen Preis
+-- neu einzustellen. Nur mit frischer AH-Suche (10 Min.), nur gehandelte Items, nie Haendlerware.
+function GF.unterbieter(id)
+  id = tonumber(id)
+  local l = GF.live[id]
+  if not (l and l.st and #l.st >= 2 and not l.voll and time() - l.t < 600) then return nil end
+  local i = GF.info(id); if not i or i.vb or GF.HAENDLERWARE[id] then return nil end
+  if (i.u or 0) < 20 then return nil end
+  local R = GF.referenz(id, i); if not R then return nil end
+  local n, kosten, maxP, naechster = 0, 0, 0, nil
+  for _, x in ipairs(l.st) do
+    if x.p <= R * 0.75 then n = n + (x.q or 1); kosten = kosten + x.p * (x.q or 1); maxP = math.max(maxP, x.p)
+    else naechster = x.p; break end
+  end
+  if n < 1 or n > 3 or not naechster or naechster < R * 0.9 then return nil end
+  local neu = math.min(naechster - 1, R)
+  local gewinn = math.floor(neu * 0.95 * n - kosten)
+  if gewinn < 200 then return nil end -- unter 2s lohnt der Aufwand nicht
+  GF.unterbieterMerk = GF.unterbieterMerk or {}
+  GF.unterbieterMerk[id] = { neu = neu, t = time() }
+  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R }
+end
+function GF.unterbieterListe()
+  local out = {}
+  for id in pairs(GF.live) do
+    local u = GF.unterbieter(id)
+    if u and not GF.ausgeblendet(id) then out[#out + 1] = u end
+  end
+  table.sort(out, function(a, b) return a.gewinn > b.gewinn end)
+  return out
+end
+
+function GF.istRohstoff(id)
+  local l = GF.live[tonumber(id)]
+  if l and l.rohstoff then return true end -- aus einer Rohstoff-Suche
+  local _, _, _, _, _, _, _, stapel = (C_Item and C_Item.GetItemInfo or GetItemInfo)(id)
+  return (stapel or 1) > 1
+end
+
 -- ---------------------------------------------------------------- Live-Preise aus AH-Suchen
 local function liveCommodity(itemID)
   if not (C_AuctionHouse and C_AuctionHouse.GetCommoditySearchResultInfo) then return end
@@ -1708,7 +1858,7 @@ local function liveCommodity(itemID)
         if q - own > 0 then p = p or x.unitPrice; if #st < 30 then st[#st + 1] = { p = x.unitPrice, q = q - own } end end
       end
     end
-    GF.live[itemID] = { p = p, n = n, t = time(), st = st, eigen = eigen }
+    GF.live[itemID] = { p = p, n = n, t = time(), st = st, eigen = eigen, rohstoff = true }
     GF.planNeu()
     if GF.aktualisieren then pcall(GF.aktualisieren) end
   end
@@ -1759,11 +1909,36 @@ end
 -- Vollscan (offizieller Ein-Klick-Scan des Auktionshauses, alle 15 Min. moeglich)
 -- GoldForeverDB.vollscan = { {t, n (Auktionen), items = {[id] = {q, a, m (guenstigster Stueckpreis), o (Verkaeufer)}}} } – die letzten 5
 local vollOffen = false
+local vollWache = nil
+-- 2.52 (Befund 27): Blizzard erlaubt den Vollscan nur alle 15 Min. (fuer alle Addons zusammen, auch TSM/Auctionator)
+-- und macht in der Abklingzeit still nichts. Darum: Abklingzeit selbst merken und nach 90 Sek. ohne Ergebnis melden.
+function GF.vollscanBereitAb()
+  local t = GoldForeverDB.vollscanZeit
+  if t and time() - t < 900 then return t + 900 end
+  return nil
+end
 function GF.vollscanStarten()
   if not (C_AuctionHouse and C_AuctionHouse.ReplicateItems) then print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan geht nur am offenen Auktionshaus."); return end
+  local ab = GF.vollscanBereitAb()
+  if ab then
+    print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan erst wieder ab " .. date("%H:%M", ab) .. " möglich (Blizzard erlaubt ihn nur alle 15 Min.).")
+    return
+  end
   vollOffen = true
   local ok = pcall(C_AuctionHouse.ReplicateItems)
-  print(GOLD .. "Gold Forever:" .. ENDE .. (ok and " Vollscan läuft – dauert einige Sekunden. Die Kauf-Vorschläge rechnen sich danach selbst neu." or " Vollscan nicht möglich (Abklingzeit 15 Min.?)."))
+  if not ok then print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan nicht möglich – Auktionshaus offen?"); return end
+  print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan läuft – Auktionshaus offen lassen, bis „gespeichert“ kommt (meist 10–60 Sek.).")
+  if C_Timer then
+    if vollWache then vollWache:Cancel() end
+    local start = time()
+    vollWache = C_Timer.NewTimer(90, function()
+      vollWache = nil
+      if not GoldForeverDB.vollscanZeit or GoldForeverDB.vollscanZeit < start then
+        GoldForeverDB.vollscanZeit = start -- Abklingzeit laeuft vermutlich trotzdem
+        print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan ohne Ergebnis. Meist läuft noch die Abklingzeit (15 Min., auch durch TSM/Auctionator) oder das Auktionshaus wurde geschlossen. Nächster Versuch ab " .. date("%H:%M", start + 900) .. ".")
+      end
+    end)
+  end
 end
 -- Lesen in Portionen (sonst friert das Spiel bei zehntausenden Auktionen ein) und nur einmal je Scan:
 -- REPLICATE_ITEM_LIST_UPDATE kommt mehrfach – erst 3 Sek. nach dem letzten Ereignis starten.
@@ -1773,6 +1948,10 @@ local function vollscanAuswerten()
   if not (C_AuctionHouse.GetNumReplicateItems and C_AuctionHouse.GetReplicateItemInfo) then return end
   local n = C_AuctionHouse.GetNumReplicateItems() or 0
   if n == 0 then return end
+  -- denselben Scan nicht doppelt speichern (das Ereignis kommt manchmal nach dem Auswerten noch einmal)
+  local letzte = (GoldForeverDB.vollscan or {})[#(GoldForeverDB.vollscan or {})]
+  if letzte and letzte.n == n and time() - letzte.t < 300 then return end
+  GoldForeverDB.vollscanZeit = time()
   local scan = { t = time(), n = n, items = {} }
   local owners = {}
   -- fuer Kauf-Vorschlaege: Preisstufen der Items aus der Datendatei, Raid-Liste und eigenen Positionen
@@ -1968,6 +2147,7 @@ f:RegisterEvent("COMMODITY_PURCHASE_SUCCEEDED")
 f:RegisterEvent("COMMODITY_PURCHASE_FAILED")
 f:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
 f:RegisterEvent("MAIL_INBOX_UPDATE")
+pcall(f.RegisterEvent, f, "COMMODITY_PRICE_UPDATED")
 pcall(f.RegisterEvent, f, "OWNED_AUCTIONS_UPDATED")
 f:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
 f:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
@@ -1991,6 +2171,7 @@ f:SetScript("OnEvent", function(_, ev, ...)
   end
   if ev == "COMMODITY_PURCHASE_FAILED" then offen = nil; return end
   if ev == "MAIL_INBOX_UPDATE" then pcall(postLesen); return end
+  if ev == "COMMODITY_PRICE_UPDATED" then pcall(GF.kaufPreisDa, ...); return end
   if ev == "OWNED_AUCTIONS_UPDATED" then pcall(eigeneAuktionen); return end
   if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then pcall(liveCommodity, ...); pcall(scanCommodity, ...); pcall(GF.zieleCheck); return end
   if ev == "ITEM_SEARCH_RESULTS_UPDATED" then pcall(liveItem, ...); pcall(scanItem, ...); pcall(GF.zieleCheck); return end

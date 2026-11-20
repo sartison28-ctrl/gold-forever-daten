@@ -2,12 +2,13 @@
 ## Title: |cfff5c451Gold Forever|r
 ## Notes: Kompakte Gold-Empfehlungen im Tooltip und im Fenster (/gf). Preise live aus TSM.
 ## Author: Alex
-## Version: 2.51.1
+## Version: 2.52
 ## SavedVariables: GoldForeverDB
 ## OptionalDeps: TradeSkillMaster, Syndicator
 ## AddonCompartmentFunc: GoldForever_Toggle
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 
 Daten\GoldForever_Daten.lua
+Daten\GoldForever_Realm.lua
 Core.lua
 UI.lua

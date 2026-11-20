@@ -1629,6 +1629,8 @@ local function kaufHaken()
         local AH = GF.ahDaten()
         local x = AH.items[id] or { n = 0 }
         local preis = sofort or gebot
+        -- 2.58.5: Einzel-Auktion mit Stapel – Preis evtl. fuer den ganzen Stapel -> Stueckpreis
+        if preis and (menge or 1) > 1 and not GF.istMassenware(id, preis, menge) then preis = math.floor(preis / menge) end
         x.n = x.n + (menge or 1); if preis and (not x.preis or preis < x.preis) then x.preis = preis end
         AH.items[id] = x
       end)
@@ -2830,12 +2832,9 @@ end
 -- 2.58.4: Massenware (Commodity: Stueckpreis) oder Einzel-Auktion (Preis fuer den Stapel)?
 function GF.istMassenware(id, preis, menge)
   id = tonumber(id)
-  if C_AuctionHouse and C_AuctionHouse.GetItemCommodityStatus and Enum and Enum.ItemCommodityStatus then
-    local ok, st = pcall(C_AuctionHouse.GetItemCommodityStatus, id)
-    if ok and st == Enum.ItemCommodityStatus.Commodity then return true end
-    if ok and st == Enum.ItemCommodityStatus.Item then return false end
-  end
+  -- (GetItemCommodityStatus braucht einen Taschenplatz, keine ID -> merken, was die Suchen gezeigt haben)
   local l = GF.live[id]; if l and l.rohstoff then return true end
+  if GoldForeverDB.einzelItem and GoldForeverDB.einzelItem[id] then return false end
   -- unbekannt: der Wert, der näher am üblichen Preis liegt
   local R = GF.referenz and GF.referenz(id)
   if R and R > 0 and preis and menge and menge > 1 then
@@ -2867,6 +2866,7 @@ local function liveItem(itemKey)
     -- 2.58.4: nach Stueckpreis sortieren (Blizzard sortiert Einzel-Auktionen evtl. nach Stapelpreis)
     table.sort(st, function(x1, x2) return x1.p < x2.p end)
     if st[1] then p = st[1].p end
+    GoldForeverDB.einzelItem = GoldForeverDB.einzelItem or {}; GoldForeverDB.einzelItem[itemKey.itemID] = true
     GF.live[itemKey.itemID] = { p = p, t = time(), st = st, eigen = eigen }
     GF.planNeu()
     if GF.aktualisieren then pcall(GF.aktualisieren) end

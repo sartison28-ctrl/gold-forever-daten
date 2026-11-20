@@ -2057,7 +2057,9 @@ local function eigeneAuktionen()
       verkauft[id] = (verkauft[id] or 0) + (a.quantity or 1)
       -- 2.52 (Befund 28): Verkaufspreis merken, damit der Gewinn mit dem echten Erloes rechnet, nicht mit dem Ziel
       if a.buyoutAmount and a.buyoutAmount > 0 then
-        vpreis[id] = vpreis[id] or {}; local v = vpreis[id]; v.n = (v.n or 0) + (a.quantity or 1); v.summe = (v.summe or 0) + a.buyoutAmount * (a.quantity or 1)
+        -- 2.58.1 (Befund 52): bei verkauften Auktionen ist buyoutAmount der GESAMTpreis (17× Elementarerde 6g 3s 33c),
+        -- nicht der Stueckpreis – vorher × Menge gerechnet -> Tooltip „+94g“ statt ca. +2g 60s
+        vpreis[id] = vpreis[id] or {}; local v = vpreis[id]; v.n = (v.n or 0) + (a.quantity or 1); v.summe = (v.summe or 0) + a.buyoutAmount
       end
     end
     if a and a.itemKey and a.itemKey.itemID and (a.status or 0) == 0 then

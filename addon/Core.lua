@@ -172,7 +172,17 @@ function GF.referenz(id, i)
   i = i or GF.info(id); if not i then return nil end
   local z = (D().zeit or {})[tonumber(id)]
   local rl = GF.realm(id)
-  if rl and rl.m and rl.n >= 3 then return rl.m, "realm", z end
+  if rl and rl.m and rl.n >= 3 then
+    -- 2.56.1 (Befund 50b): Markt ueber Tage eingebrochen (faellt >= 3 Tage oder 3-Tage-Trend <= -30 %) ->
+    -- der 7-Tage-Median hinkt hinterher; dann zaehlt der niedrigste von 7-Tage-, 24-Std.-Median und Verkaufspreis
+    if (rl.fall or 0) >= 3 or (rl.tr3 or 0) <= -30 then
+      local R = rl.m
+      if rl.m0 and rl.m0 < R then R = rl.m0 end
+      if rl.vp and rl.vp < R then R = rl.vp end
+      return R, "realm", z, R < rl.m * 0.8
+    end
+    return rl.m, "realm", z
+  end
   if z and z.m and (z.n or 0) >= 6 then return z.m, "realm", z end
   if i.r and i.r > 0 then return math.min(i.r, (i.mw and i.mw > 0) and i.mw or i.r), "region", z end
   return nil, nil, z
@@ -509,13 +519,20 @@ local function basisEmpfehlung(id, i, eigen)
     end
     return E("halt", "bis zum Tag vor dem Reset")
   end
-  if not q or (i.u or 0) < 50 then
-    -- Wenig Umsatz: nur verkaufen, wenn der Preis gerade ueber dem ueblichen liegt; nie zum Kauf raten
+  -- 2.56.1 (Befund 50a): 20–49 Verkaeufe/Tag duerfen ab 25 % unter üblich gekauft werden (kleine Menge),
+  -- vorher war alles unter 50/Tag gesperrt, obwohl handelbar() ab 20/Tag zulaesst
+  local wenig = (i.u or 0) < 50
+  if not q or (i.u or 0) < 20 or (wenig and q > 0.75) then
+    -- Wenig Umsatz: nur verkaufen, wenn der Preis gerade ueber dem ueblichen liegt
     local proTag = math.max(1, math.floor((i.u or 0) + 0.5))
     if ah and (i.u or 0) > 0 and q and q >= 1.1 then
       local e = E("verk", "über üblich, verkauft sich aber langsam (ca. " .. proTag .. "/Tag)"); e.langsam = true; return e
     end
-    local e = E("halt", (i.u or 0) > 0 and ("wenig Handel (ca. " .. proTag .. "/Tag), Preis nicht besonders") or "kaum Handel im Auktionshaus")
+    local txt
+    if (i.u or 0) <= 0 then txt = "kaum Handel im Auktionshaus"
+    elseif q and q <= 0.9 then txt = "wenig Handel (ca. " .. proTag .. "/Tag) – zum Kaufen " .. ((i.u or 0) < 20 and "zu wenig" or "erst ab 25 % unter üblich")
+    else txt = "wenig Handel (ca. " .. proTag .. "/Tag), Preis nicht besonders" end
+    local e = E("halt", txt)
     e.still = true; return e
   end
   local abw = math.floor((q - 1) * 100 + 0.5)
@@ -529,6 +546,7 @@ local function basisEmpfehlung(id, i, eigen)
   local erf = GF.erfahrung(id)
   -- 2.56: neue Items nur aus den Realm-Daten (ohne Datendatei/Erfahrung) vorsichtiger: erst ab 20 % unter üblich
   if i.nurRealm and not erf then kaufGrenze = math.min(kaufGrenze, -20) end
+  if wenig then kaufGrenze = math.min(kaufGrenze, -25) end
   if erf and erf.bewaehrt then kaufGrenze = kaufGrenze + 3 elseif erf and erf.vorsicht then kaufGrenze = kaufGrenze - 10 end
   if abw <= kaufGrenze then
     -- Kaufen nur, wenn: genug Handel, guenstiger Preis bestaetigt (2 Messungen in Folge oder live im AH),
@@ -584,6 +602,8 @@ local function basisEmpfehlung(id, i, eigen)
     if tf and not tf.jetztVerk then return E("verk", "normaler Preis – Tageshoch erst morgen, lieber jetzt einstellen") end
     return E("verk", tf and "normaler Preis, jetzt ist Tageshoch" or "normaler Preis – Halten bringt nichts")
   end
+  -- 2.56.1: unter üblich, aber noch ueber der Kaufgrenze -> ehrlich sagen
+  if abw <= -10 then return E("halt", (-abw) .. " % unter " .. wo .. " – Kaufgrenze erst ab " .. (-kaufGrenze) .. " %") end
   return E("halt", "Preis normal, kein Extra-Gewinn")
 end
 
@@ -857,9 +877,14 @@ local DIAG = {
   { "nicht günstig", "TSM-Gegenprobe" }, { "erholt sich", "erholt sich selten" }, { "geflutet", "Markt geflutet" },
   { "stürzt", "Preis stürzt" }, { "fällt", "Preis fällt" }, { "wenig Handel", "wenig Handel" }, { "kaum Handel", "wenig Handel" },
   { "Gewinn je Stück", "Gewinn je Stück zu klein" }, { "lohnt nicht", "unter 5s Gewinn" }, { "Budget", "Budget" },
-  { "Vollscan", "erst AH-Prüfung" }, { "nichts bis", "im AH nichts so billig" }, { "genug gekauft", "schon genug gekauft" },
+  { "eingebrochen", "Markt eingebrochen" }, { "Vollscan", "erst AH-Prüfung" }, { "nichts bis", "im AH nichts so billig" }, { "genug gekauft", "schon genug gekauft" },
   { "Plan ist voll", "Plan voll (max. 5)" }, { "Händler", "Händlerware" }, { "endet in", "Event endet" }, { "Raid", "Raid-Ware" },
   { "Preissprung", "Preissprung" }, { "nicht handelbar", "nicht handelbar" },
+  -- 2.56.1 (Befund 50d): feinere Gruppen statt "sonstiges"
+  { "zahlt ", "Händler zahlt mehr" }, { "Kaufgrenze erst", "noch nicht tief genug" }, { "wenig Handel", "wenig Handel" },
+  { "zu wenig Umsatz", "wenig Handel" }, { "verkauft sich selten", "verkauft sich selten" }, { "schwank", "schwankt zu stark" },
+  { "Item-Infos laden", "Item-Infos laden noch" }, { "gerade unter", "eigene Ware – halten" }, { "Bedarf noch offen", "neu in Forever" },
+  { "Preis normal", "Preis normal" }, { "nicht im Plan", "Kauf – Plan/Budget voll" },
 }
 function GF.kaufDiagnose()
   local P = (GF.ah and GF.ah.plan) or GF.budgetPlan()
@@ -867,9 +892,11 @@ function GF.kaufDiagnose()
   local liste, kat = {}, {}
   for id in pairs(GF.alleIds(true)) do
     local i = not imPlan[id] and not GF.ausgeblendet(id) and GF.info(id)
-    local R = i and i.p and i.p > 0 and GF.referenz(id, i)
+    local R, _, _, eingebr = nil, nil, nil, nil
+    if i and i.p and i.p > 0 then R, _, _, eingebr = GF.referenz(id, i) end
     if R and i.p <= R * 0.9 then
       local grund = P.grund and P.grund[id]
+      if eingebr then grund = "Markt eingebrochen – üblich neu berechnet" end
       if not grund then
         local e = GF.empfehlung(id, i, true)
         grund = e and e.art ~= "kauf" and e.grund or nil
@@ -881,7 +908,9 @@ function GF.kaufDiagnose()
       for _, x in ipairs(DIAG) do if grund:find(x[1], 1, true) then g = x[2]; break end end
       g = g or (abw < 15 and "noch nicht tief genug" or "sonstiges")
       kat[g] = (kat[g] or 0) + 1
-      liste[#liste + 1] = { id = id, n = i.n or ("Item " .. id), abw = abw, grund = grund, gruppe = g }
+      local nm = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(id))
+      if not nm and C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+      liste[#liste + 1] = { id = id, n = nm or i.n or ("Item " .. id), abw = abw, grund = grund, gruppe = g }
     end
   end
   table.sort(liste, function(a, b) return a.abw > b.abw end)

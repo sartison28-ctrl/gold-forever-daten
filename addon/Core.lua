@@ -2964,9 +2964,32 @@ function GF.sniperBewerten(id)
   -- 2.58 (Wunsch Alex): Items mit wenig Umsatz (< 50/Tag) nicht snipen – ausser selbst in die Merkliste eingetragen
   if (i.u or 0) < 50 and not snDB().eigen[id] then return nil end
   local grenze = GF.sniperGrenze(id, i, R)
-  local cap = math.max(3, math.floor((i.u or 0) * 0.10))
+  -- 2.58.2 (Befund 53, 600× Wuttrank): Hektik-Sperre – mehrere Treffer zum selben Item in kurzer Zeit
+  -- = oft neues billiges Angebot (neuer Preis) statt Schnaeppchen -> Item 30 Min. pausieren
+  local S = GF.sniper
+  S.hits = S.hits or {}
+  local h = S.hits[id] or {}
+  local frisch = {}; for _, t0 in ipairs(h) do if time() - t0 < 600 then frisch[#frisch + 1] = t0 end end
+  S.hits[id] = frisch
+  if #frisch >= 2 then
+    S.skip = S.skip or {}; S.skip[id] = time() + 1200 -- 600 s Ruhe aus snTick + 1200 = 30 Min.
+    return nil
+  end
+  -- 2.58.2: Umsatz vorsichtig = kleinerer Wert aus TSM-Region und Realm; Menge hoechstens ½ Tagesumsatz,
+  -- Billig-Items (< 1s) hoechstens 200 Stueck; Gesamt-Budget fuer Snipes je Tag = 30 % des Kaufbudgets
+  local rl = GF.realm(id)
+  local umsatz = i.u or 0
+  if rl and rl.vt then umsatz = math.min(umsatz > 0 and umsatz or rl.vt, rl.vt) end
+  local tsmU = tsm("DBRegionSoldPerDay*1000", id)
+  if tsmU then umsatz = math.min(umsatz, tsmU / 1000) end
+  local halb = math.max(1, math.floor(umsatz * 0.5))
+  local cap = math.max(3, math.floor(umsatz * 0.10))
   local gold = GetMoney and GetMoney() or 0
-  local budget = math.floor(gold * (D().budget or 0.7) * 0.30)
+  local tagesBudget = math.floor(gold * (D().budget or 0.7) * 0.30)
+  local db = snDB(); db.ausgaben = db.ausgaben or {}
+  local schon = db.ausgaben[date("%Y-%m-%d")] or 0
+  local budget = math.min(math.floor(gold * (D().budget or 0.7) * 0.30), math.max(0, tagesBudget - schon))
+  if budget < 100 then return nil end
   local n, kosten, maxP, naechster = 0, 0, 0, nil
   for _, x in ipairs(l.st) do
     if x.p <= R * grenze and n < cap then
@@ -2978,14 +3001,20 @@ function GF.sniperBewerten(id)
     elseif x.p > R * grenze then naechster = x.p; break end
   end
   if n < 1 then return nil end
-  local neu = math.min(R, (naechster and naechster > maxP) and (naechster - 1) or R)
+  -- 2.58.2: Wiederverkauf knapp unter dem naechsten fremden Angebot – bleiben gleich billige Stuecke im AH
+  -- liegen (Teilkauf einer Stufe), liegt der Verkaufspreis darunter (kein Gewinn -> kein Treffer)
+  local neu = math.min(R, naechster and (naechster - 1) or R)
   local gewinn = math.floor(neu * 0.95 * n - kosten)
   -- 2.57.1: Preistreppe (bis 1 Tagesumsatz) – lohnt das Aufkaufen bis zur naechsten Luecke mehr?
-  local T = GF.treppe(id, R, math.floor(R * grenze), math.max(cap, math.floor(i.u or 0)), budget)
+  local deckel = halb
+  if R < 100 then deckel = math.min(deckel, 200) end
+  local T = GF.treppe(id, R, math.floor(R * grenze), deckel, budget)
   if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
+  if n > deckel then return nil end
   if gewinn < SN_MIN then return nil end
+  frisch[#frisch + 1] = time()
   return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(),
-    abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil }
+    abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5) }
 end
 
 -- Anzeige: Leiste oben am Auktionshaus
@@ -3019,17 +3048,24 @@ function GF.sniperZeigen()
   local k = GF.kaufLauf
   if t then
     snF.knopf:Show()
+    -- 2.58.2 (Wunsch Alex): übersichtlich – Icon, Menge = Gesamtpreis, Gewinn gross, Details in einer Zeile
+    snF.icon:SetTexture((C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(t.id)) or (GetItemIcon and GetItemIcon(t.id)) or 134400); snF.icon:Show()
+    local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
+    snF.name:SetText(name); snF.name:Show()
     if k and k.id == t.id and k.unit then
-      snF.knopf.t:SetText("BESTÄTIGEN  " .. snText(t) .. " je " .. GF.geld(k.unit) .. "  [" .. snDB().taste .. "]")
+      snF.knopf.t:SetText("BESTÄTIGEN  " .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "  [" .. snDB().taste .. "]")
     elseif k and k.id == t.id then
       snF.knopf.t:SetText("Preis wird geholt …")
     else
-      snF.knopf.t:SetText("KAUFEN  " .. snText(t) .. " bis " .. GF.geld(t.max) .. "  ·  Gewinn +" .. GF.geld(t.gewinn) .. "  [" .. snDB().taste .. "]")
+      snF.knopf.t:SetText("KAUFEN  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. ENDE .. "   [" .. snDB().taste .. "]")
     end
-    snF.info:SetText(GRAU .. t.abw .. " % unter üblich · Wiederverkauf je " .. GF.geld(t.neu) .. " · Rechtsklick: überspringen" .. ENDE)
+    local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
+    snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
+      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
   else
     snF.knopf:Hide(); snBindung(false)
+    if snF.icon then snF.icon:Hide(); snF.name:Hide() end
     local n = #S.liste
     local was
     if S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
@@ -3056,6 +3092,7 @@ local function snKlick(self, knopf)
         ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
       local d = snDB(); local tag = date("%Y-%m-%d"); d.treffer[tag] = (d.treffer[tag] or 0) + 1
       t.bezahlt = kk.unit; snLog(t, "gekauft")
+      d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
   elseif not k then
@@ -3069,7 +3106,7 @@ end
 local function snBauen()
   if snF then return end
   snF = CreateFrame("Frame", "GoldForeverSniper", UIParent)
-  snF:SetSize(560, 58); snF:SetFrameStrata("HIGH")
+  snF:SetSize(600, 66); snF:SetFrameStrata("HIGH")
   if AuctionHouseFrame then snF:SetPoint("BOTTOM", AuctionHouseFrame, "TOP", 0, 6) else snF:SetPoint("TOP", 0, -40) end
   snF.bg = snF:CreateTexture(nil, "BACKGROUND"); snF.bg:SetAllPoints(); snF.bg:SetColorTexture(0.06, 0.07, 0.1, 0.92)
   snF.an = CreateFrame("Button", nil, snF); snF.an:SetSize(96, 22); snF.an:SetPoint("TOPLEFT", 6, -5)
@@ -3078,7 +3115,10 @@ local function snBauen()
   snF.an:SetScript("OnClick", function() GF.sniperUmschalten() end)
   snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.an, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
   local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
-  b:SetPoint("BOTTOMLEFT", 6, 5); b:SetPoint("BOTTOMRIGHT", -6, 5); b:SetHeight(24)
+  -- 2.58.2: Item-Icon + Name links, Knopf rechts daneben
+  snF.icon = snF:CreateTexture(nil, "ARTWORK"); snF.icon:SetSize(30, 30); snF.icon:SetPoint("BOTTOMLEFT", 6, 5); snF.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); snF.icon:Hide()
+  snF.name = snF:CreateFontString(nil, "OVERLAY", "GameFontNormal"); snF.name:SetPoint("LEFT", snF.icon, "RIGHT", 6, 0); snF.name:SetWidth(150); snF.name:SetJustifyH("LEFT"); snF.name:Hide()
+  b:SetPoint("BOTTOMLEFT", 196, 5); b:SetPoint("BOTTOMRIGHT", -6, 5); b:SetHeight(30)
   b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(); b.bg:SetColorTexture(0.65, 0.45, 0.95, 0.55)
   b.t = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight"); b.t:SetPoint("CENTER")
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp"); b:SetScript("OnClick", snKlick)

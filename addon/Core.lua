@@ -112,14 +112,19 @@ function GF.info(id)
   local vb = tsm("VendorBuy", id) or (GoldForeverDB.haendler and GoldForeverDB.haendler[id])
   local name, _, q, _, _, _, _, _, _, _, vk, kl = (C_Item and C_Item.GetItemInfo or GetItemInfo)(id)
   local sr = tsm("DBRegionSaleRate*1000", id)
-  if not it and not p and not r and not (vk and vk > 0) and not vb then return nil end
+  -- 2.56 (Befund 49): Items, die nur in den Realm-Daten (GitHub) stehen, kennt GF jetzt auch
+  local rl = not it and GF.realm(id)
+  if not it and not p and not r and not (vk and vk > 0) and not vb and not rl then return nil end
+  if not it and not name and C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
+  local nurRealm = (not it) and rl and true or nil
   it = it or {}
   local u = it[5]
+  if not u and nurRealm and rl.vt then u = rl.vt end
   if not u then local spd = tsm("DBRegionSoldPerDay*1000", id); u = spd and spd / 1000 or nil end
   return {
-    n = it[1] or name, p = p or it[2], r = r or it[3], mw = mw or it[4], u = u, a = it[6], s = it[7], g = it[8],
+    n = it[1] or name or (nurRealm and ("Item " .. id)) or nil, p = p or it[2] or (nurRealm and rl.m0) or nil, r = r or it[3], mw = mw or it[4], u = u, a = it[6], s = it[7], g = it[8],
     q = q, vk = (vk and vk > 0) and vk or nil, vb = vb, live = p ~= nil, ahLive = GF.livePreis(id, true) ~= nil, ahGeprueft = GF.livePreis(id) ~= nil or GF.liveNurEigene(id),
-    kl = kl, sr = sr and sr / 1000 or nil, id = id,
+    kl = kl, sr = sr and sr / 1000 or nil, id = id, nurRealm = nurRealm,
     opMin = tsm("AuctioningOpMin", id), -- Mindestpreis deiner TSM-Einstell-Operation (darunter ueberspringt TSM)
   }
 end
@@ -140,6 +145,28 @@ function GF.realm(id)
     fall = r[5] or 0, vt = (r[6] or 0) > 0 and r[6] or nil, vp = (r[7] or 0) > 0 and r[7] or nil, st = r[8] or 0 }
 end
 function GF.realmAlter() local R = GoldForeverRealm; return R and R.t and (time() - R.t) or nil end
+-- 2.56 (Befund 49): alle Items, die GF fuer Kaufen/Pruefen betrachtet = Datendatei + Realm-Items mit
+-- >= 20 Verkaeufen/Tag und >= 3 Tagen Daten (vorher nur die ~790 Items der TSM-Liste, ~950 Handelswaren fehlten).
+-- mitLive = true: Realm-Items nur, wenn es einen aktuellen AH-Preis gibt (Vollscan/Suche) – spart Rechenzeit.
+local idsCache = {}
+function GF.alleIds(mitLive)
+  local R = GoldForeverRealm
+  local key = (R and R.t or 0) .. ":" .. tostring(D().stand)
+  if idsCache.key ~= key then
+    local ids = {}
+    for id in pairs(D().items or {}) do ids[tonumber(id) or id] = "datei" end
+    if R and R.i then
+      for id, r in pairs(R.i) do
+        if not ids[id] and (r[6] or 0) >= 20 and (r[2] or 0) >= 3 and (r[1] or 0) > 0 then ids[id] = "realm" end
+      end
+    end
+    idsCache = { key = key, ids = ids }
+  end
+  if not mitLive then return idsCache.ids end
+  local out = {}
+  for id, w in pairs(idsCache.ids) do if w == "datei" or GF.livePreis(id) then out[id] = w end end
+  return out
+end
 
 function GF.referenz(id, i)
   i = i or GF.info(id); if not i then return nil end
@@ -318,6 +345,9 @@ end
 
 -- Genug Handel fuer Kauf-Empfehlungen? (sonst bleibt man auf der Ware sitzen)
 function GF.handelbar(i)
+  -- 2.56: Realm-Items ohne Item-Infos (noch nicht geladen) nicht kaufen – Klasse unbekannt
+  if i.nurRealm and not i.kl then return false, "Item-Infos laden noch" end
+  if i.nurRealm and i.q and i.q >= 3 then return false, "Qualitätsware schwankt zu stark" end
   if (i.u or 0) < 20 then return false, "zu wenig Umsatz (" .. math.floor((i.u or 0) + 0.5) .. "/Tag)" end
   if i.sr and i.sr < 0.2 then return false, "verkauft sich selten" end
   if i.kl == 9 then return false, "Rezepte schwanken zu stark" end
@@ -497,6 +527,8 @@ local function basisEmpfehlung(id, i, eigen)
   local kaufGrenze = (quelle == "realm") and -15 or -25 -- ohne eigenen Verlauf strenger
   -- 2.54 Lernsystem: bewaehrte Items etwas frueher kaufen, Verlierer erst deutlich tiefer
   local erf = GF.erfahrung(id)
+  -- 2.56: neue Items nur aus den Realm-Daten (ohne Datendatei/Erfahrung) vorsichtiger: erst ab 20 % unter üblich
+  if i.nurRealm and not erf then kaufGrenze = math.min(kaufGrenze, -20) end
   if erf and erf.bewaehrt then kaufGrenze = kaufGrenze + 3 elseif erf and erf.vorsicht then kaufGrenze = kaufGrenze - 10 end
   if abw <= kaufGrenze then
     -- Kaufen nur, wenn: genug Handel, guenstiger Preis bestaetigt (2 Messungen in Folge oder live im AH),
@@ -768,7 +800,7 @@ function GF.budgetPlan()
   local gold = GetMoney and GetMoney() or 0
   local budget = math.floor(gold * (D().budget or 0.7))
   local kand, grund = {}, {}
-  for id in pairs(D().items or {}) do
+  for id in pairs(GF.alleIds(true)) do
     local i = GF.info(id)
     local e = i and i.p and i.p > 0 and GF.empfehlung(id, i, true)
     local R = e and e.art == "kauf" and not GF.raid(id) and not GF.ausgeblendet(id) and GF.referenz(id, i)
@@ -833,7 +865,7 @@ function GF.kaufDiagnose()
   local P = (GF.ah and GF.ah.plan) or GF.budgetPlan()
   local imPlan = {}; for _, d in ipairs(P.deals or {}) do imPlan[d.id] = true end
   local liste, kat = {}, {}
-  for id in pairs(D().items or {}) do
+  for id in pairs(GF.alleIds(true)) do
     local i = not imPlan[id] and not GF.ausgeblendet(id) and GF.info(id)
     local R = i and i.p and i.p > 0 and GF.referenz(id, i)
     if R and i.p <= R * 0.9 then
@@ -2581,7 +2613,7 @@ local function vollscanAuswerten()
   local owners = {}
   -- fuer Kauf-Vorschlaege: Preisstufen der Items aus der Datendatei, Raid-Liste und eigenen Positionen
   local rel, stufen = {}, {}
-  for id in pairs(D().items or {}) do rel[tonumber(id) or id] = true end
+  for id in pairs(GF.alleIds()) do rel[tonumber(id) or id] = true end
   for id in pairs(D().raid or {}) do rel[tonumber(id) or id] = true end
   vollLauf = { k = 0 }
   local function portion()
@@ -2626,7 +2658,7 @@ local function vollscanAuswerten()
     local m = 0; for _ in pairs(scan.items) do m = m + 1 end
     vollLauf = nil
     -- Live-Preise setzen (ausser frische eigene Suche < 10 Min.), dann Einkaufsplan neu rechnen
-    local gesetzt = 0
+    local gesetzt, neuRealm = 0, 0
     for id, l in pairs(stufen) do
       if not GF.livePreis(id, true) then
         table.sort(l, function(a, b) return a.p < b.p end)
@@ -2637,6 +2669,7 @@ local function vollscanAuswerten()
         end
         GF.live[id] = { p = l[1].p, n = #l, t = time(), st = st, voll = true }
         gesetzt = gesetzt + 1
+        if GF.alleIds()[id] == "realm" then neuRealm = neuRealm + 1 end
       end
     end
     GF.planNeu()
@@ -2647,7 +2680,7 @@ local function vollscanAuswerten()
       vorschlaege = #GF.ah.plan.deals
     else vorschlaege = #GF.budgetPlan().deals end
     print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan gespeichert: " .. n .. " Auktionen, " .. m .. " verschiedene Items. " ..
-      gesetzt .. " Preise übernommen – " .. vorschlaege .. " Kauf-Vorschläge. Kandidaten werden jetzt im AH geprüft …")
+      gesetzt .. " Preise übernommen" .. (neuRealm > 0 and (" (davon " .. neuRealm .. " neu aus den Realm-Daten)") or "") .. " – " .. vorschlaege .. " Kauf-Vorschläge. Kandidaten werden jetzt im AH geprüft …")
     -- 2.55 (Befund 42): Gruende festhalten und kurz nennen
     do
       local ok, liste, gr = pcall(GF.kaufDiagnose)

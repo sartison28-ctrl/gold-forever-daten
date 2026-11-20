@@ -2648,7 +2648,7 @@ local function scanItem(itemKey)
     local b = r and r.buyoutAmount
     if b then
       local stk = math.max(1, r.quantity or 1)
-      local unit = math.floor(b / stk) -- 2.58.4: Stapelpreis -> Stueckpreis
+      local unit = b -- 2.58.6: Suche liefert Stueckpreis
       p = p or unit; q = q + stk
       if unit <= p * 1.05 then q5 = q5 + stk end
       for _, o in ipairs(r.owners or {}) do owner[o] = true end
@@ -2857,8 +2857,9 @@ local function liveItem(itemKey)
       if b then
         -- 2.58.4 (Befund 54, Kiste Textilien): bei Einzel-Auktionen (keine Massenware) ist der Preis der GESAMTpreis
         -- des Stapels (z. B. 36 Kisten für 37s 85c) – vorher als Stueckpreis gelesen
+        -- 2.58.6: Korrektur – die Suche liefert bei Einzel-Auktionen den STUECKpreis (Auctionator zeigt 37s 85c × 25,
+        -- GF ebenso); die Teilung aus 2.58.4 war falsch. Gesamtpreis liefern nur „Meine Auktionen“ und der Vollscan.
         local menge = math.max(1, x.quantity or 1)
-        b = math.floor(b / menge)
         if x.containsOwnerItem then eigen = eigen or b
         else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = b, q = menge } end end
       end

@@ -7,6 +7,6 @@ C_AuctionHouse.GetNumItemSearchResults = function() return #RES end
 C_AuctionHouse.GetItemSearchResultInfo = function(_, k) return RES[k] end
 fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 248698 })
 local l = GF.live[248698]; zeige("Kiste live p " .. tostring(l and l.p) .. " eigen " .. tostring(l and l.eigen) .. " st1 " .. tostring(l and l.st[1] and l.st[1].p))
-assert(l.p == 105)
+assert(l.p == 150)
 zeige("Massenware? " .. tostring(GF.istMassenware(248698, 4400, 11)))
 zeige("Ende 2.58.4 ok")

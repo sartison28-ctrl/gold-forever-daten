@@ -2926,6 +2926,8 @@ function GF.sniperListe(neu)
   for id in pairs(db.eigen) do dazu(id) end
   local L = GF.lernen()
   for id, e in pairs(L.item or {}) do if e.bewaehrt or (e.plus > 0 and (e.avgStd or 99) <= 6) then dazu(id) end end
+  -- 2.58: mit breiter Durchsuche (Browse) bleibt die Merkliste klein (eigene + bewaehrte), sonst Auffuellen wie 2.57
+  if C_AuctionHouse and C_AuctionHouse.SendBrowseQuery then S.liste, S.listeT = out, time(); return out end
   local kand = {}
   for id in pairs(GF.alleIds()) do
     if not drin[id] and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) then
@@ -2941,6 +2943,15 @@ function GF.sniperListe(neu)
   S.liste, S.listeT = out, time()
   return out
 end
+function GF.sniperGrenze(id, i, R)
+  local erf = GF.erfahrung(id)
+  local grenze = 0.85
+  if i.nurRealm and not erf then grenze = 0.80 end
+  if (i.u or 0) < 50 then grenze = math.min(grenze, 0.75) end
+  if erf and erf.bewaehrt then grenze = grenze + 0.03 elseif erf and erf.vorsicht then grenze = grenze - 0.10 end
+  if i.mw and i.mw > 0 and R and R > 0 then grenze = math.min(grenze, 0.95 * i.mw / R) end
+  return grenze
+end
 -- Treffer pruefen: guenstige Preisstufen unter der Kaufgrenze, Wiederverkauf knapp unter der naechsten Stufe (max. üblich)
 function GF.sniperBewerten(id)
   id = tonumber(id)
@@ -2948,12 +2959,9 @@ function GF.sniperBewerten(id)
   local i = GF.info(id); if not i or i.vb or GF.HAENDLERWARE[id] then return nil end
   if not GF.handelbar(i) or GF.faelltTage(id) then return nil end
   local R, _, _, eingebr = GF.referenz(id, i); if not R or eingebr then return nil end
-  local erf = GF.erfahrung(id)
-  local grenze = 0.85
-  if i.nurRealm and not erf then grenze = 0.80 end
-  if (i.u or 0) < 50 then grenze = math.min(grenze, 0.75) end
-  if erf and erf.bewaehrt then grenze = grenze + 0.03 elseif erf and erf.vorsicht then grenze = grenze - 0.10 end
-  if i.mw and i.mw > 0 then grenze = math.min(grenze, 0.95 * i.mw / R) end
+  -- 2.58 (Wunsch Alex): Items mit wenig Umsatz (< 50/Tag) nicht snipen – ausser selbst in die Merkliste eingetragen
+  if (i.u or 0) < 50 and not snDB().eigen[id] then return nil end
+  local grenze = GF.sniperGrenze(id, i, R)
   local cap = math.max(3, math.floor((i.u or 0) * 0.10))
   local gold = GetMoney and GetMoney() or 0
   local budget = math.floor(gold * (D().budget or 0.7) * 0.30)
@@ -3021,8 +3029,11 @@ function GF.sniperZeigen()
   else
     snF.knopf:Hide(); snBindung(false)
     local n = #S.liste
-    snF.info:SetText(S.an and (GRAU .. "sucht " .. (S.aktuell and (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell)) or "…") ..
-      " (" .. math.min(S.k, n) .. "/" .. n .. ") · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
+    local was
+    if S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
+    elseif S.browseLaeuft then was = "durchsucht das AH … " .. (S.browseN or 0) .. " Items"
+    else was = "Durchgang " .. (S.zyklus or 0) .. " · " .. (S.browseN or 0) .. " Items gesehen" end
+    snF.info:SetText(S.an and (GRAU .. was .. " · Kandidaten " .. (S.kandidaten or 0) .. " · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
       or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sniper“ startet die Suche · Taste " .. snDB().taste .. ENDE))
   end
 end
@@ -3080,24 +3091,97 @@ local function snPause()
   if GF.kaufLauf then return true end
   local A = AuctionHouseFrame
   if A and ((A.CommoditiesBuyFrame and A.CommoditiesBuyFrame:IsShown()) or (A.ItemBuyFrame and A.ItemBuyFrame:IsShown())) then return true end
+  -- 2.58: du suchst selbst (Text im Blizzard-Suchfeld) -> Browse nicht ueberschreiben
+  local sb = A and A.SearchBar and A.SearchBar.SearchBox
+  if sb and sb.GetText and (sb:GetText() or "") ~= "" then return true end
   return false
+end
+-- 2.58 Sniper 2: breite Durchsuche (wie TSM seit Patch 8.3): eine Browse-Anfrage ohne Suchbegriff ueber
+-- Handwerkswaren, Verbrauchbares, Reagenzien, Verschiedenes liefert fuer jedes Item den guenstigsten Preis.
+-- Kandidaten (Preis unter Kaufgrenze, >= 50 Verkaeufe/Tag, nicht eingebrochen/fallend) kommen in eine Warteschlange,
+-- dort folgt die Detail-Suche (Preistreppe) -> Treffer. Zwischen den Durchgaengen: Merkliste (eigene/bewaehrte).
+local SN_KLASSEN = { 7, 0, 5, 15 }
+local function snSuche(id)
+  local S = GF.sniper
+  S.aktuell, S.suche, S.sucheT = id, id, time()
+  S.geprueft = S.geprueft or {}; S.geprueft[id] = time()
+  pcall(function()
+    local sortierung = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } }
+    C_AuctionHouse.SendSearchQuery(C_AuctionHouse.MakeItemKey(id), sortierung, true)
+  end)
+end
+local function snBrowse()
+  local S = GF.sniper
+  local filter = {}
+  for _, k in ipairs(SN_KLASSEN) do filter[#filter + 1] = { classID = k } end
+  local ok = pcall(function()
+    C_AuctionHouse.SendBrowseQuery({ searchString = "", sorts = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } },
+      filters = {}, itemClassFilters = filter })
+  end)
+  S.browseT, S.bIdx, S.browseN, S.aktuell = time(), 0, 0, nil
+  S.browseLaeuft = ok
+  S.zyklus = (S.zyklus or 0) + 1
+  -- Merkliste (eigene/bewaehrte) einmal je Durchgang mit pruefen
+  S.queue = S.queue or {}
+  for _, id in ipairs(GF.sniperListe()) do S.queue[#S.queue + 1] = id end
+end
+-- Browse-Ergebnisse auswerten (AUCTION_HOUSE_BROWSE_RESULTS_UPDATED / _ADDED)
+function GF.sniperBrowse()
+  local S = GF.sniper
+  if not (S.an and S.browseLaeuft and C_AuctionHouse.GetBrowseResults) then return false end
+  local res = C_AuctionHouse.GetBrowseResults() or {}
+  local ids = GF.alleIds()
+  S.queue = S.queue or {}; S.geprueft = S.geprueft or {}
+  local drin = {}; for _, q in ipairs(S.queue) do drin[q] = true end
+  for k = (S.bIdx or 0) + 1, #res do
+    local r = res[k]
+    local id = r and r.itemKey and r.itemKey.itemID
+    if id and ids[id] and r.minPrice and not drin[id] and not (S.geprueft[id] and time() - S.geprueft[id] < 60)
+      and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) and not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
+      local i = GF.info(id)
+      if i and not i.vb and (i.u or 0) >= 50 then
+        local R, _, _, eingebr = GF.referenz(id, i)
+        if R and not eingebr and r.minPrice <= R * GF.sniperGrenze(id, i, R) and R * 0.95 - r.minPrice >= 30 and not GF.faelltTage(id) then
+          table.insert(S.queue, 1, id); drin[id] = true
+          S.kandidaten = (S.kandidaten or 0) + 1
+        end
+      end
+    end
+  end
+  S.bIdx = #res; S.browseN = #res
+  if C_AuctionHouse.HasFullBrowseResults and not C_AuctionHouse.HasFullBrowseResults() and C_AuctionHouse.RequestMoreBrowseResults then
+    pcall(C_AuctionHouse.RequestMoreBrowseResults)
+  else
+    S.browseLaeuft = false; S.letzterBrowse = time()
+  end
+  GF.sniperZeigen()
+  return true
 end
 local function snTick()
   local S = GF.sniper
   if not (S.an and GF.ah) then S.laeuft = false; return end
   if C_Timer then C_Timer.After(SN_TAKT, snTick) end
   if S.treffer or snPause() then GF.sniperZeigen(); return end
+  -- Detail-Suche noch offen (max. 5 Sek.)
+  if S.suche and time() - (S.sucheT or 0) < 5 then return end
+  S.suche = nil
+  local browse = C_AuctionHouse and C_AuctionHouse.SendBrowseQuery
+  if browse then
+    if S.browseLaeuft and time() - (S.browseT or 0) < 20 then return end
+    S.browseLaeuft = false
+    S.queue = S.queue or {}
+    local id = table.remove(S.queue, 1)
+    if id then snSuche(id) else snBrowse() end
+    GF.sniperZeigen(); return
+  end
+  -- ohne Browse (aeltere Schnittstelle): Merkliste reihum wie 2.57
   local liste = GF.sniperListe()
   if #liste == 0 then return end
   S.k = (S.k % #liste) + 1
   local id = liste[S.k]
   S.skip = S.skip or {}
   if S.skip[id] and time() - S.skip[id] < 600 then return end
-  S.aktuell, S.suche = id, id
-  pcall(function()
-    local sortierung = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } }
-    C_AuctionHouse.SendSearchQuery(C_AuctionHouse.MakeItemKey(id), sortierung, true)
-  end)
+  snSuche(id)
   GF.sniperZeigen()
 end
 -- Ergebnis einer Sniper-Suche (aus COMMODITY_SEARCH_RESULTS_UPDATED, nach liveCommodity)
@@ -3105,7 +3189,7 @@ function GF.sniperErgebnis(id)
   local S = GF.sniper
   id = tonumber(id)
   if not (S.an and S.suche == id) then return false end
-  S.suche = nil
+  S.suche = nil; S.aktuell = nil
   local t = GF.sniperBewerten(id)
   if t and not S.treffer then
     S.treffer = t
@@ -3124,7 +3208,8 @@ function GF.sniperUmschalten(an)
   if S.an then
     GF.sniperListe(true)
     if not S.laeuft then S.laeuft = true; snTick() end
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an – durchsucht " .. #S.liste .. " Items reihum. Treffer: Ton + Knopf oben am AH, Taste " .. snDB().taste .. " (1× starten, 1× bestätigen).")
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an – durchsucht " .. ((C_AuctionHouse and C_AuctionHouse.SendBrowseQuery) and ("das ganze AH (Handwerkswaren, Verbrauchbares, Reagenzien, Verschiedenes) + Merkliste " .. #S.liste) or (#S.liste .. " Items reihum")) ..
+      ". Treffer: Ton + Knopf oben am AH, Taste " .. snDB().taste .. " (1× starten, 1× bestätigen).")
   else
     S.treffer = nil; S.suche = nil
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " aus.")
@@ -3167,6 +3252,8 @@ f:RegisterEvent("MAIL_INBOX_UPDATE")
 pcall(f.RegisterEvent, f, "COMMODITY_PRICE_UPDATED")
 pcall(f.RegisterEvent, f, "OWNED_AUCTIONS_UPDATED")
 f:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
+pcall(f.RegisterEvent, f, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+pcall(f.RegisterEvent, f, "AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 f:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 pcall(f.RegisterEvent, f, "REPLICATE_ITEM_LIST_UPDATE")
 f:RegisterEvent("MERCHANT_SHOW")
@@ -3201,6 +3288,7 @@ f:SetScript("OnEvent", function(_, ev, ...)
   if ev == "MAIL_INBOX_UPDATE" then pcall(postLesen); return end
   if ev == "COMMODITY_PRICE_UPDATED" then pcall(GF.kaufPreisDa, ...); return end
   if ev == "OWNED_AUCTIONS_UPDATED" then pcall(eigeneAuktionen); return end
+  if ev == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or ev == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then pcall(GF.sniperBrowse); return end
   if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then
     -- 2.57: Sniper-Suchen nur auswerten (kein Neuzeichnen des ganzen Fensters alle 1,6 Sek.)
     local sid = ...

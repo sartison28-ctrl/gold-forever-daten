@@ -289,7 +289,7 @@ function GF.einstellen(i)
   -- nur sehr schnell verkaufte Ware 8 Std. (Gebuehr kleiner). 2 Std. nie.
   local rl = i.id and GF.realm(i.id)
   local proTag = math.max(i.u or 0, rl and rl.vt or 0)
-  local dauer = (proTag >= 500) and "8 Std." or "24 Std."
+  local dauer = "24 Std." -- 2.53.2: immer 24 Std. (8-Std.-Regel griff wegen zu hoher Verkaufsschaetzung viel zu oft)
   return preis, dauer
 end
 

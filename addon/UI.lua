@@ -1442,7 +1442,7 @@ function ANSICHTEN.bilanz(v)
           { e.typ == "farm" and "Gesamt (Erlös)" or "Gesamt", GF.geld(math.abs(e.typ == "farm" and math.floor((x.betrag or 0) * n / math.max(1, x.n)) or e.wert or 0)) },
         }
         if e.typ == "farm" and x.basis then det[#det + 1] = { "Vergleichspreis", GF.geld(x.basis) .. " je Stück" }; det[#det + 1] = { "Mehrerlös", GF.geld(e.wert) } end
-        if e.typ ~= "kauf" then det[#det + 1] = { "Wo", "Auktionshaus → Briefkasten" } end
+        if e.typ ~= "kauf" then det[#det + 1] = { "Wo", "Auktionshaus, dann Briefkasten" } end
         zeilen[#zeilen + 1] = { id = x.id, n = n, betrag = plusMinus(e.wert), details = det,
           mitte = verb(w[1], w[2]) .. H.grau .. " " .. GF.WT[tonumber(date("%w", x.t)) + 1] .. " " .. date("%H:%M", x.t) .. ENDE }
       end
@@ -1647,11 +1647,15 @@ local function baueAnsichten(kind)
   -- Bank-Leiste (2.53): an der offenen Bank drei Knöpfe
   v.bank = CreateFrame("Frame", nil, v); v.bank:SetSize(INNEN, 24); v.bank.hoehe = 24; flaeche(v.bank, 0.04); v.bank:Hide()
   v.bank.t = text(v.bank, 10, F.grau); v.bank.t:SetPoint("LEFT", 8, 0); v.bank.t:SetText("Bank:")
-  local BK = { { "haltRein", "Halten → Bank", F.blau }, { "haltRaus", "Halten → Tasche", F.blau }, { "verkRaus", "Verkaufen → Tasche", F.gruen } }
+  -- 2.53.2 (Befund 35): Symbole statt „→“ (Zeichen fehlt in der Schrift) – gleiche Icons wie die Lagerorte der Karten
+  local TA, BA, PF = "|TInterface\\Icons\\INV_Misc_Bag_08:14:14:0:0:64:64:5:59:5:59|t", "|TInterface\\Icons\\INV_Box_01:14:14:0:0:64:64:5:59:5:59|t",
+    "|TInterface\\ChatFrame\\ChatFrameExpandArrow:12:12|t"
+  local BK = { { "haltRein", "Halten " .. TA .. PF .. BA, F.blau, "Halten in die Bank" }, { "haltRaus", "Halten " .. BA .. PF .. TA, F.blau, "Halten in die Tasche" },
+    { "verkRaus", "Verkaufen " .. BA .. PF .. TA, F.gruen, "Verkaufen in die Tasche" } }
   local vorher
   for k, x in ipairs(BK) do
     local l = link(v.bank, 10, function() GF.bankVerschieben(x[1]) end,
-      { x[2], k == 1 and "Alle blauen Halten-Items aus der Tasche in die Bank." or k == 2 and "Alle blauen Halten-Items aus der Bank in die Tasche." or "Alle grünen Verkaufen-Items aus der Bank in die Tasche – bereit zum Einstellen." })
+      { x[4], k == 1 and "Alle blauen Halten-Items aus der Tasche in die Bank." or k == 2 and "Alle blauen Halten-Items aus der Bank in die Tasche." or "Alle grünen Verkaufen-Items aus der Bank in die Tasche – bereit zum Einstellen." })
     l:Text(x[2]); l.t:SetTextColor(x[3][1], x[3][2], x[3][3])
     if vorher then l:SetPoint("LEFT", vorher, "RIGHT", 14, 0) else l:SetPoint("LEFT", v.bank.t, "RIGHT", 10, 0) end
     vorher = l
@@ -1672,7 +1676,7 @@ local function baueAnsichten(kind)
   v.haltSort = link(v.spaeter.z2, 10, function()
     local nx = { ab = "auf", auf = "az", az = "ab" }
     GoldForeverDB.haltSort = nx[GoldForeverDB.haltSort or "ab"]; GF.aktualisieren()
-  end, { "Sortierung wechseln", "Gewinn hoch → Gewinn tief → A–Z" })
+  end, { "Sortierung wechseln", "Gewinn hoch, Gewinn tief, A–Z" })
   v.haltSort:SetPoint("RIGHT", 0, 0)
   v.ah = abschnitt(v, F.gold, 20)
   v.kauf = abschnitt(v, F.lila, 10)

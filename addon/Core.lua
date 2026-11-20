@@ -2077,6 +2077,8 @@ local function eigeneAuktionen()
       local x = items[id] or { n = 0 }
       x.n = x.n + (a.quantity or 1)
       local p = a.buyoutAmount
+      -- 2.58.4 (Befund 54): Einzel-Auktion mit Stapel (keine Massenware) -> Preis gilt für den ganzen Stapel
+      if p and (a.quantity or 1) > 1 and not GF.istMassenware(id, p, a.quantity) then p = math.floor(p / a.quantity) end
       if p and (not x.preis or p < x.preis) then x.preis = p end
       items[id] = x
       if a.auctionID then
@@ -2644,7 +2646,7 @@ local function scanItem(itemKey)
     local b = r and r.buyoutAmount
     if b then
       local stk = math.max(1, r.quantity or 1)
-      local unit = b
+      local unit = math.floor(b / stk) -- 2.58.4: Stapelpreis -> Stueckpreis
       p = p or unit; q = q + stk
       if unit <= p * 1.05 then q5 = q5 + stk end
       for _, o in ipairs(r.owners or {}) do owner[o] = true end
@@ -2825,6 +2827,23 @@ function GF.auftragSuche()
   return table.concat(t, ";"), #t
 end
 
+-- 2.58.4: Massenware (Commodity: Stueckpreis) oder Einzel-Auktion (Preis fuer den Stapel)?
+function GF.istMassenware(id, preis, menge)
+  id = tonumber(id)
+  if C_AuctionHouse and C_AuctionHouse.GetItemCommodityStatus and Enum and Enum.ItemCommodityStatus then
+    local ok, st = pcall(C_AuctionHouse.GetItemCommodityStatus, id)
+    if ok and st == Enum.ItemCommodityStatus.Commodity then return true end
+    if ok and st == Enum.ItemCommodityStatus.Item then return false end
+  end
+  local l = GF.live[id]; if l and l.rohstoff then return true end
+  -- unbekannt: der Wert, der näher am üblichen Preis liegt
+  local R = GF.referenz and GF.referenz(id)
+  if R and R > 0 and preis and menge and menge > 1 then
+    local a, b = preis / R, (preis / menge) / R
+    return math.abs(math.log(a)) <= math.abs(math.log(b))
+  end
+  return true
+end
 local function liveItem(itemKey)
   if not (itemKey and C_AuctionHouse and C_AuctionHouse.GetItemSearchResultInfo) then return end
   local r = C_AuctionHouse.GetItemSearchResultInfo(itemKey, 1)
@@ -2837,10 +2856,17 @@ local function liveItem(itemKey)
       local x = C_AuctionHouse.GetItemSearchResultInfo(itemKey, k)
       local b = x and (x.buyoutAmount or x.bidAmount)
       if b then
+        -- 2.58.4 (Befund 54, Kiste Textilien): bei Einzel-Auktionen (keine Massenware) ist der Preis der GESAMTpreis
+        -- des Stapels (z. B. 36 Kisten für 37s 85c) – vorher als Stueckpreis gelesen
+        local menge = math.max(1, x.quantity or 1)
+        b = math.floor(b / menge)
         if x.containsOwnerItem then eigen = eigen or b
-        else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = x.buyoutAmount, q = x.quantity or 1 } end end
+        else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = b, q = menge } end end
       end
     end
+    -- 2.58.4: nach Stueckpreis sortieren (Blizzard sortiert Einzel-Auktionen evtl. nach Stapelpreis)
+    table.sort(st, function(x1, x2) return x1.p < x2.p end)
+    if st[1] then p = st[1].p end
     GF.live[itemKey.itemID] = { p = p, t = time(), st = st, eigen = eigen }
     GF.planNeu()
     if GF.aktualisieren then pcall(GF.aktualisieren) end

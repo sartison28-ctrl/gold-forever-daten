@@ -475,10 +475,21 @@ end
 
 -- ---------------------------------------------------------------- Rezepte / Material-Check
 local nutzIndex
+-- 2.53 (Wunsch Alex): eigene, gelernte Rezepte (GoldForeverDB.rezepte[char][rezeptID] = {produkt, menge, beruf, 0, {{id, n}...}, name})
+-- Sind fuer diesen Charakter Rezepte bekannt, zaehlen NUR diese (was er wirklich herstellen kann), sonst die Liste der Datendatei.
+function GF.eigeneRezepte()
+  local r = GoldForeverDB.rezepte and GoldForeverDB.rezepte[GF.charKey and GF.charKey() or ""]
+  if not r then return nil end
+  local liste = {}
+  for _, x in pairs(r) do liste[#liste + 1] = x end
+  return #liste > 0 and liste or nil
+end
+local function rezeptListe() return GF.eigeneRezepte() or D().rez or {} end
+function GF.rezepteNeu() nutzIndex = nil end
 local function index()
   if nutzIndex then return nutzIndex end
   nutzIndex = {}
-  for _, r in ipairs(D().rez or {}) do
+  for _, r in ipairs(rezeptListe()) do
     for _, z in ipairs(r[5] or {}) do
       local t = nutzIndex[z[1]] or {}; t[#t + 1] = r; nutzIndex[z[1]] = t
     end
@@ -550,7 +561,7 @@ end
 -- Herstellen: Materialkosten, Erloes, Gewinn
 function GF.herstellung(id)
   id = tonumber(id)
-  for _, r in ipairs(D().rez or {}) do
+  for _, r in ipairs(rezeptListe()) do
     if r[1] == id then
       local k, ok = 0, true
       for _, z in ipairs(r[5]) do local zi = GF.info(z[1]); if zi and zi.p then k = k + zi.p * z[2] else ok = false end end
@@ -665,6 +676,9 @@ function GF.budgetPlan()
     local i = GF.info(id)
     local e = i and i.p and i.p > 0 and GF.empfehlung(id, i, true)
     local R = e and e.art == "kauf" and not GF.raid(id) and not GF.ausgeblendet(id) and GF.referenz(id, i)
+    -- 2.53 (Befund 34): Preis nur aus dem Vollscan und knapp an der Grenze -> erst nach Pruefung im AH vorschlagen
+    local lvv = R and GF.live[tonumber(id)]
+    if lvv and lvv.voll and i.p > R * 0.80 then grund[id] = "aus dem Vollscan knapp an der Grenze – wird im AH geprüft"; R = nil end
     if R then
       -- Ziel vorsichtig: ueblicher Preis, hoechstens TSM-Marktwert
       local ziel = (i.mw and i.mw > 0) and math.min(R, i.mw) or R
@@ -1034,6 +1048,32 @@ function GF.handelHeute(seit)
     end
   end
   return ein, aus, ein - aus
+end
+-- Alle Käufe/Verkäufe (wie TSM) in einem Zeitraum (2.53): {ein, aus, profit, liste = {{x, wert}}, topV, topK, tage}
+function GF.handelZeitraum(sekunden)
+  local ab = sekunden and (time() - sekunden) or 0
+  local ich = charKey()
+  local r = { ein = 0, aus = 0, liste = {}, tage = {}, nV = 0, nK = 0 }
+  local proItemV, proItemK = {}, {}
+  for _, x in ipairs((GoldForeverDB.bilanz and GoldForeverDB.bilanz.buch) or {}) do
+    if x.t >= ab and (x.char == nil or x.char == ich) and (x.art == "verk" or x.art == "kauf") then
+      local w = x.betrag or 0
+      r.liste[#r.liste + 1] = { x = x, wert = w }
+      local tag = date("%Y-%m-%d", x.t)
+      local T = r.tage[tag] or { ein = 0, aus = 0, nV = 0, nK = 0, t = x.t }; r.tage[tag] = T
+      if x.art == "verk" then
+        r.ein = r.ein + w; r.nV = r.nV + 1; T.ein = T.ein + w; T.nV = T.nV + 1
+        proItemV[x.id] = (proItemV[x.id] or 0) + w
+      else
+        r.aus = r.aus - w; r.nK = r.nK + 1; T.aus = T.aus - w; T.nK = T.nK + 1
+        proItemK[x.id] = (proItemK[x.id] or 0) - w
+      end
+    end
+  end
+  r.profit = r.ein - r.aus
+  for id, w in pairs(proItemV) do if not r.topV or w > r.topV.w then r.topV = { id = id, w = w } end end
+  for id, w in pairs(proItemK) do if not r.topK or w > r.topK.w then r.topK = { id = id, w = w } end end
+  return r
 end
 function GF.tagesbilanz()
   local t = GoldForeverDB.tag and GoldForeverDB.tag[charKey()]
@@ -1840,6 +1880,284 @@ function GF.istRohstoff(id)
   return (stapel or 1) > 1
 end
 
+-- ---------------------------------------------------------------- Rezepte merken (2.53)
+-- Beim Oeffnen eines Berufsfensters: gelernte Rezepte mit Zutaten und Ergebnis speichern (je Charakter).
+local rezeptTimer
+local function rezepteLesen()
+  local mein = (GoldForeverDB.rezepte and GoldForeverDB.rezepte[charKey()]) or {}
+  local neu = 0
+  if C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs and C_TradeSkillUI.GetRecipeSchematic then
+    local beruf
+    local okb, bi = pcall(C_TradeSkillUI.GetBaseProfessionInfo); if okb and bi then beruf = bi.professionName end
+    for _, rid in ipairs(C_TradeSkillUI.GetAllRecipeIDs() or {}) do
+      local ok, info = pcall(C_TradeSkillUI.GetRecipeInfo, rid)
+      if ok and info and info.learned then
+        local ok2, sc = pcall(C_TradeSkillUI.GetRecipeSchematic, rid, false)
+        if ok2 and sc and sc.outputItemID then
+          local z = {}
+          for _, slot in ipairs(sc.reagentSlotSchematics or {}) do
+            local basis = slot.reagentType == nil or slot.reagentType == 1 or (Enum and Enum.CraftingReagentType and slot.reagentType == Enum.CraftingReagentType.Basic)
+            local r = slot.reagents and slot.reagents[1]
+            if basis and r and r.itemID and slot.required ~= false then z[#z + 1] = { r.itemID, slot.quantityRequired or 1 } end
+          end
+          if #z > 0 then
+            if not mein[rid] then neu = neu + 1 end
+            mein[rid] = { sc.outputItemID, ((sc.quantityMin or 1) + (sc.quantityMax or sc.quantityMin or 1)) / 2, beruf or "", 0, z, name = info.name }
+          end
+        end
+      end
+    end
+  elseif GetNumTradeSkills and GetTradeSkillInfo then
+    -- Rueckfall: alte Berufs-API (Classic)
+    local beruf = GetTradeSkillLine and GetTradeSkillLine() or ""
+    for k = 1, GetNumTradeSkills() do
+      local name, typ = GetTradeSkillInfo(k)
+      if name and typ ~= "header" then
+        local link = GetTradeSkillItemLink and GetTradeSkillItemLink(k)
+        local pid = link and tonumber(string.match(link, "item:(%d+)"))
+        if pid then
+          local z = {}
+          for r = 1, (GetTradeSkillNumReagents and GetTradeSkillNumReagents(k) or 0) do
+            local _, _, anz = GetTradeSkillReagentInfo(k, r)
+            local rl = GetTradeSkillReagentItemLink and GetTradeSkillReagentItemLink(k, r)
+            local rid = rl and tonumber(string.match(rl, "item:(%d+)"))
+            if rid then z[#z + 1] = { rid, anz or 1 } end
+          end
+          local mn, mx = 1, 1
+          if GetTradeSkillNumMade then mn, mx = GetTradeSkillNumMade(k) end
+          local key = "c" .. pid
+          if #z > 0 then
+            if not mein[key] then neu = neu + 1 end
+            mein[key] = { pid, ((mn or 1) + (mx or mn or 1)) / 2, beruf, 0, z, name = name }
+          end
+        end
+      end
+    end
+  end
+  GoldForeverDB.rezepte = GoldForeverDB.rezepte or {}
+  GoldForeverDB.rezepte[charKey()] = mein
+  nutzIndex = nil
+  if neu > 0 then
+    local n = 0; for _ in pairs(mein) do n = n + 1 end
+    print(GOLD .. "Gold Forever:" .. ENDE .. " " .. neu .. " Rezepte neu gemerkt (" .. n .. " insgesamt) – „Herstellen“ rechnet jetzt mit deinen Rezepten.")
+    if GF.aktualisieren then pcall(GF.aktualisieren) end
+  end
+end
+function GF.rezepteLesenSpaeter()
+  if not C_Timer then return pcall(rezepteLesen) end
+  if rezeptTimer then rezeptTimer:Cancel() end
+  rezeptTimer = C_Timer.NewTimer(1.5, function() rezeptTimer = nil; pcall(rezepteLesen) end)
+end
+
+-- Herstellen-Vorschlaege (2.53):
+--  a) eigene Rohstoffe, bei denen ein eigenes Rezept deutlich mehr bringt als Verkaufen (Empfehlung „herstellen“)
+--  b) Zutaten kaufen -> herstellen -> verkaufen: Gewinn >= 5s und >= 10 % der Kosten, Ergebnis verkauft sich (>= 20/Tag)
+function GF.herstellenListe()
+  local eigen, kauf = {}, {}
+  for id in pairs(GF.eigeneIds()) do
+    local n = GF.anzahl(id)
+    if n > 0 and not GF.ausgeblendet(id) then
+      local i = GF.info(id)
+      local e = i and GF.empfehlung(id, i)
+      if e and e.art == "herstellen" and e.nutzung then
+        local w = GF.verkaufswert(i) or 0
+        eigen[#eigen + 1] = { id = id, n = n, i = i, b = e.nutzung, mehr = math.floor((e.nutzung.pro - w) * n), w = w }
+      end
+    end
+  end
+  for _, r in ipairs(GF.eigeneRezepte() or {}) do
+    local pid = r[1]
+    local pi = GF.info(pid)
+    local erl = pi and GF.wert(pi)
+    local rl = GF.realm(pid)
+    local absatz = math.max(pi and pi.u or 0, rl and rl.vt or 0)
+    if erl and erl > 0 and absatz >= 20 and not GF.ausgeblendet(pid) then
+      local kosten, ok, frisch = 0, true, true
+      for _, z in ipairs(r[5]) do
+        local zi = GF.info(z[1])
+        local preis = (zi and zi.vb) or GF.kaufPreis(z[1], z[2]) or (zi and zi.p)
+        if not preis then ok = false; break end
+        if not (zi and zi.vb) and not GF.frisch(z[1]) then frisch = false end
+        kosten = kosten + preis * z[2]
+      end
+      local menge = (r[2] and r[2] > 0) and r[2] or 1
+      local gewinn = ok and math.floor(erl * menge - kosten) or 0
+      if ok and gewinn >= 500 and gewinn >= kosten * 0.1 then
+        kauf[#kauf + 1] = { id = pid, r = r, kosten = kosten, erl = erl * menge, gewinn = gewinn, frisch = frisch, menge = menge }
+      end
+    end
+  end
+  table.sort(eigen, function(a, b) return a.mehr > b.mehr end)
+  table.sort(kauf, function(a, b) return a.gewinn > b.gewinn end)
+  return eigen, kauf
+end
+
+-- ---------------------------------------------------------------- Gold nach Herkunft (2.53, Wunsch Alex)
+-- Jede Goldaenderung wird nach dem Zusammenhang eingeordnet: Loot, Quest, Haendler (Verkauf/Kauf/Reparatur),
+-- AH (Verkaufserloes aus der Post / Kaeufe), Sonstiges (Post von Spielern, Flugmeister, Gebuehren …).
+-- GoldForeverDB.geld[char][JJJJ-MM-TT] = {loot, quest, haendler, haendlerkauf, ah, ahkauf, sonst}
+local geldVorher, geldZeit = nil, {}
+GF.offen = {}
+local function geldMerken(art) geldZeit[art] = time() end
+function GF.geldKontext(ev)
+  if ev == "LOOT_OPENED" or ev == "LOOT_READY" then GF.offen.loot = true; geldMerken("loot")
+  elseif ev == "LOOT_CLOSED" then GF.offen.loot = false; geldMerken("loot")
+  elseif ev == "CHAT_MSG_MONEY" then geldMerken("loot")
+  elseif ev == "QUEST_COMPLETE" then GF.offen.quest = true; geldMerken("quest")
+  elseif ev == "QUEST_FINISHED" then GF.offen.quest = false; geldMerken("quest")
+  elseif ev == "QUEST_TURNED_IN" then geldMerken("quest")
+  elseif ev == "MERCHANT_SHOW" then GF.offen.haendler = true
+  elseif ev == "MERCHANT_CLOSED" then GF.offen.haendler = false; geldMerken("haendler")
+  elseif ev == "MAIL_SHOW" then GF.offen.post = true
+  elseif ev == "MAIL_CLOSED" then GF.offen.post = false end
+end
+local function geldArt(diff)
+  local jetzt = time()
+  local function kurz(a, s) return geldZeit[a] and jetzt - geldZeit[a] <= (s or 3) end
+  if kurz("ahpost", 5) and diff > 0 then return "ah" end
+  if GF.ah and diff < 0 then return "ahkauf" end
+  if GF.offen.quest or kurz("quest") then return "quest" end
+  if GF.offen.loot or kurz("loot") then return diff > 0 and "loot" or "sonst" end
+  if GF.offen.haendler or kurz("haendler", 1) then return diff > 0 and "haendler" or "haendlerkauf" end
+  return "sonst"
+end
+function GF.geldBuchen()
+  local jetzt = GetMoney and GetMoney() or 0
+  if geldVorher == nil then geldVorher = jetzt; return end
+  local diff = jetzt - geldVorher; geldVorher = jetzt
+  if diff == 0 then return end
+  local art = geldArt(diff)
+  GoldForeverDB.geld = GoldForeverDB.geld or {}
+  local c = GoldForeverDB.geld[charKey()] or {}; GoldForeverDB.geld[charKey()] = c
+  local tag = date("%Y-%m-%d")
+  local t = c[tag] or {}; c[tag] = t
+  t[art] = (t[art] or 0) + diff
+  -- nur 60 Tage aufbewahren
+  local grenze = date("%Y-%m-%d", time() - 60 * 86400)
+  for d in pairs(c) do if d < grenze then c[d] = nil end end
+end
+-- Summen fuer einen Zeitraum (Sekunden zurueck, nil = alles; "heute" = seit Mitternacht)
+function GF.geldHerkunft(sekunden)
+  local c = (GoldForeverDB.geld or {})[charKey()] or {}
+  local ab = sekunden and date("%Y-%m-%d", time() - sekunden) or "0000"
+  local s = { loot = 0, quest = 0, haendler = 0, haendlerkauf = 0, ah = 0, ahkauf = 0, sonst = 0 }
+  for d, t in pairs(c) do if d >= ab then for k, v in pairs(t) do s[k] = (s[k] or 0) + v end end end
+  return s
+end
+-- AH-Erloes beim Geld-Nehmen aus der Post erkennen
+local function postGeldHaken()
+  if GF.postGehakt or not TakeInboxMoney then return end
+  GF.postGehakt = true
+  hooksecurefunc("TakeInboxMoney", function(k)
+    local ok, typ = pcall(GetInboxInvoiceInfo, k)
+    if ok and typ == "seller" then geldMerken("ahpost") end
+  end)
+  if AutoLootMailItem then hooksecurefunc("AutoLootMailItem", function(k)
+    local ok, typ = pcall(GetInboxInvoiceInfo, k)
+    if ok and typ == "seller" then geldMerken("ahpost") end
+  end) end
+end
+
+-- ---------------------------------------------------------------- Bank-Knoepfe (2.53, Wunsch Alex)
+-- An der offenen Bank: Halten-Ware (blau) in die Bank / wieder heraus, Verkaufen-Ware (gruen) aus der Bank in die Tasche.
+local TASCHEN = { 0, 1, 2, 3, 4, 5 }
+local BANKFAECHER = { -1, -3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 }
+-- Welche Art hat ein Item fuer die Bank-Knoepfe? "verk" (gruen), "halt" (blau) oder nil (nicht anfassen)
+function GF.bankArt(id)
+  if GF.ausgeblendet(id) then return nil end
+  local i = GF.info(id); if not i then return nil end
+  local e = GF.empfehlung(id, i, nil, true)
+  if not e then return nil end
+  if e.art == "verk" and not e.langsam then return "verk" end
+  if GF.raid(id) and e.art ~= "verk" then return "halt" end
+  if (e.art == "halt" and not e.still) or e.art == "kauf" or e.art == "herstellen" then return "halt" end
+  return nil
+end
+local function slotsVon(faecher)
+  local out = {}
+  for _, b in ipairs(faecher) do
+    local ok, n = pcall(C_Container.GetContainerNumSlots, b)
+    for sl = 1, (ok and n or 0) do
+      local ok2, info = pcall(C_Container.GetContainerItemInfo, b, sl)
+      if ok2 and info and info.itemID and not info.isLocked then out[#out + 1] = { b = b, s = sl, id = info.itemID, gebunden = info.isBound } end
+    end
+  end
+  return out
+end
+-- modus: "haltRein" (Tasche -> Bank), "haltRaus" (Bank -> Tasche), "verkRaus" (Bank -> Tasche)
+function GF.bankVerschieben(modus)
+  if not (GF.bankOffen and C_Container and C_Container.UseContainerItem) then
+    print(GOLD .. "Gold Forever:" .. ENDE .. " Das geht nur an der offenen Bank."); return
+  end
+  local quelle = (modus == "haltRein") and TASCHEN or BANKFAECHER
+  local will = (modus == "verkRaus") and "verk" or "halt"
+  local art, n = {}, 0
+  for _, x in ipairs(slotsVon(quelle)) do
+    if art[x.id] == nil then art[x.id] = GF.bankArt(x.id) or false end
+    if art[x.id] == will and not (modus == "haltRein" and x.gebunden and not GF.raid(x.id)) then
+      local ok = pcall(C_Container.UseContainerItem, x.b, x.s)
+      if ok then n = n + 1 end
+    end
+  end
+  local was = ({ haltRein = "Halten-Ware in die Bank", haltRaus = "Halten-Ware in die Tasche", verkRaus = "Verkaufen-Ware in die Tasche" })[modus]
+  print(GOLD .. "Gold Forever:" .. ENDE .. " " .. n .. (n == 1 and " Stapel " or " Stapel ") .. was .. "." .. (n == 0 and " (Nichts zu verschieben.)" or " Fehlt etwas: Tasche/Bank voll? Dann noch einmal klicken."))
+  if C_Timer and GF.aktualisieren then C_Timer.After(1, function() pcall(GF.aktualisieren) end) end
+  return n
+end
+
+-- ---------------------------------------------------------------- Im AH pruefen (2.53, Befund 32/33/34)
+-- GF sucht Items selbst nacheinander im AH (eigene Suche, kein TSM-Suchfeld). Ergebnis landet ueber die
+-- normalen Such-Ereignisse in GF.live (frisch 10 Min.). Je Item hoechstens 2,5 Sek., dann das naechste.
+GF.pruef = { liste = {}, k = 0, n = 0 }
+local function pruefNaechstes()
+  local P = GF.pruef
+  if not GF.ah then P.liste = {}; P.aktiv = false; return end
+  P.k = P.k + 1
+  local id = P.liste[P.k]
+  if not id then
+    P.liste = {}; P.aktiv = false; P.aktuell = nil
+    if P.fertig then local f = P.fertig; P.fertig = nil; pcall(f) end
+    GF.planNeu()
+    if GF.aktualisieren then pcall(GF.aktualisieren) end
+    return
+  end
+  P.aktiv, P.aktuell = true, id
+  local ok = pcall(function()
+    local key = C_AuctionHouse.MakeItemKey(id)
+    local sortierung = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } }
+    C_AuctionHouse.SendSearchQuery(key, sortierung, true)
+  end)
+  local meinK = P.k
+  if C_Timer then C_Timer.After(ok and 2.5 or 0.1, function() if GF.pruef.k == meinK and GF.pruef.aktiv then pruefNaechstes() end end) end
+  if GF.aktualisieren then pcall(GF.aktualisieren) end
+end
+function GF.pruefen(ids, fertig)
+  if not (GF.ah and C_AuctionHouse and C_AuctionHouse.SendSearchQuery and C_AuctionHouse.MakeItemKey) then
+    print(GOLD .. "Gold Forever:" .. ENDE .. " Im AH prüfen geht nur am offenen Auktionshaus."); return
+  end
+  local P, schon = GF.pruef, {}
+  P.liste, P.k, P.fertig = {}, 0, fertig
+  for _, id in ipairs(ids or {}) do
+    id = tonumber(id)
+    if id and not schon[id] then schon[id] = true; P.liste[#P.liste + 1] = id end
+  end
+  P.n = #P.liste
+  if P.n == 0 then return end
+  pruefNaechstes()
+end
+function GF.pruefStand() local P = GF.pruef; if P.aktiv then return math.min(P.k, P.n), P.n end end
+local function pruefErgebnis(id)
+  local P = GF.pruef
+  if not (P.aktiv and P.aktuell == tonumber(id)) then return end
+  local meinK = P.k
+  if C_Timer then C_Timer.After(0.4, function() if GF.pruef.k == meinK and GF.pruef.aktiv then pruefNaechstes() end end) end
+end
+-- Frisch = AH-Suche in den letzten 10 Min. (auch wenn nur die eigene Auktion gefunden wurde)
+function GF.frisch(id)
+  local l = GF.live[tonumber(id)]
+  return (l and not l.voll and time() - l.t < 600) and true or false
+end
+
 -- ---------------------------------------------------------------- Live-Preise aus AH-Suchen
 local function liveCommodity(itemID)
   if not (C_AuctionHouse and C_AuctionHouse.GetCommoditySearchResultInfo) then return end
@@ -1964,7 +2282,8 @@ local function vollscanAuswerten()
     for k = vollLauf.k, bis do
       -- Rueckgabe: name, texture, count, qualityID, usable, level, levelType, minBid, minIncrement,
       --           buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus, itemID, hasAllInfo
-      local ok, _, _, count, _, _, _, _, _, _, buyout, _, _, _, owner, _, _, itemID = pcall(C_AuctionHouse.GetReplicateItemInfo, k)
+      local ok, _, _, count, _, _, _, _, _, _, buyout, _, _, _, owner, _, _, itemID, alles = pcall(C_AuctionHouse.GetReplicateItemInfo, k)
+      if ok and (not itemID or alles == false) then vollLauf.unvoll = (vollLauf.unvoll or 0) + 1 end
       if ok and itemID then
         local x = scan.items[itemID] or { q = 0, a = 0 }
         local c = math.max(1, count or 1)
@@ -1979,6 +2298,15 @@ local function vollscanAuswerten()
     end
     vollLauf.k = bis + 1
     if vollLauf.k < n then C_Timer.After(0.05, portion); return end
+    -- 2.53 (Befund 34): Daten noch unvollstaendig (WoW laedt nach) -> nicht speichern, kurz warten, neu lesen
+    if (vollLauf.unvoll or 0) > n * 0.02 and (GF.vollVersuche or 0) < 4 then
+      GF.vollVersuche = (GF.vollVersuche or 0) + 1
+      vollLauf = nil
+      print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan lädt noch nach – kurz warten …")
+      C_Timer.After(4, function() pcall(vollscanAuswerten) end)
+      return
+    end
+    GF.vollVersuche = 0
     for id, os in pairs(owners) do local c = 0; for _ in pairs(os) do c = c + 1 end; if scan.items[id] then scan.items[id].o = c end end
     -- nur die letzten 2 Vollscans behalten (300.000 Auktionen = sonst sehr grosse SavedVariables);
     -- fehlerhafte Scans aus 2.28 (nur 1 Item) werfen
@@ -2012,7 +2340,20 @@ local function vollscanAuswerten()
       vorschlaege = #GF.ah.plan.deals
     else vorschlaege = #GF.budgetPlan().deals end
     print(GOLD .. "Gold Forever:" .. ENDE .. " Vollscan gespeichert: " .. n .. " Auktionen, " .. m .. " verschiedene Items. " ..
-      gesetzt .. " Preise übernommen – " .. vorschlaege .. " Kauf-Vorschläge neu berechnet (ohne /reload).")
+      gesetzt .. " Preise übernommen – " .. vorschlaege .. " Kauf-Vorschläge. Kandidaten werden jetzt im AH geprüft …")
+    -- 2.53 (Befund 34): Kauf-Kandidaten aus dem Vollscan sofort gezielt im AH pruefen
+    if GF.ah and GF.pruefen then
+      local ids = {}
+      for id, l in pairs(GF.live) do
+        if l.voll then
+          local i = GF.info(id); local R = i and GF.referenz(id, i)
+          if R and i.p and i.p <= R * 0.9 and not GF.ausgeblendet(id) then ids[#ids + 1] = id end
+        end
+      end
+      table.sort(ids, function(a, b) return a < b end)
+      while #ids > 25 do table.remove(ids) end
+      if #ids > 0 then pcall(GF.pruefen, ids) end
+    end
     if GF.aktualisieren then pcall(GF.aktualisieren) end
   end
   portion()
@@ -2154,12 +2495,21 @@ f:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 pcall(f.RegisterEvent, f, "REPLICATE_ITEM_LIST_UPDATE")
 f:RegisterEvent("MERCHANT_SHOW")
 pcall(f.RegisterEvent, f, "MERCHANT_UPDATE")
+for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED", "LOOT_OPENED", "LOOT_READY", "LOOT_CLOSED",
+  "CHAT_MSG_MONEY", "QUEST_COMPLETE", "QUEST_TURNED_IN", "QUEST_FINISHED", "MERCHANT_CLOSED", "MAIL_SHOW", "MAIL_CLOSED" }) do pcall(f.RegisterEvent, f, e) end
 f:SetScript("OnEvent", function(_, ev, ...)
+  if ev == "TRADE_SKILL_SHOW" or ev == "TRADE_SKILL_LIST_UPDATE" or ev == "TRADE_SKILL_DATA_SOURCE_CHANGED" then pcall(GF.rezepteLesenSpaeter); return end
+  if ev == "LOOT_OPENED" or ev == "LOOT_READY" or ev == "LOOT_CLOSED" or ev == "CHAT_MSG_MONEY" or ev == "QUEST_COMPLETE" or ev == "QUEST_TURNED_IN"
+    or ev == "QUEST_FINISHED" or ev == "MERCHANT_SHOW" or ev == "MERCHANT_CLOSED" or ev == "MAIL_SHOW" or ev == "MAIL_CLOSED" then
+    pcall(GF.geldKontext, ev)
+    if ev == "MAIL_SHOW" then pcall(postGeldHaken) end
+    if ev ~= "MERCHANT_SHOW" then return end
+  end
   if ev == "MERCHANT_SHOW" or ev == "MERCHANT_UPDATE" then
     if C_Timer then C_Timer.After(0.5, function() pcall(haendlerMerken) end) else pcall(haendlerMerken) end
     return
   end
-  if ev == "PLAYER_MONEY" then tagPruefen(); return end
+  if ev == "PLAYER_MONEY" then tagPruefen(); pcall(GF.geldBuchen); return end
   if ev == "AUCTION_HOUSE_SHOW" then
     pcall(kaufHaken); pcall(ahAuf)
     if C_Timer and C_AuctionHouse and C_AuctionHouse.QueryOwnedAuctions then C_Timer.After(1, function() pcall(C_AuctionHouse.QueryOwnedAuctions, {}) end) end
@@ -2173,23 +2523,27 @@ f:SetScript("OnEvent", function(_, ev, ...)
   if ev == "MAIL_INBOX_UPDATE" then pcall(postLesen); return end
   if ev == "COMMODITY_PRICE_UPDATED" then pcall(GF.kaufPreisDa, ...); return end
   if ev == "OWNED_AUCTIONS_UPDATED" then pcall(eigeneAuktionen); return end
-  if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then pcall(liveCommodity, ...); pcall(scanCommodity, ...); pcall(GF.zieleCheck); return end
-  if ev == "ITEM_SEARCH_RESULTS_UPDATED" then pcall(liveItem, ...); pcall(scanItem, ...); pcall(GF.zieleCheck); return end
+  if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then pcall(liveCommodity, ...); pcall(scanCommodity, ...); pcall(GF.zieleCheck); pcall(pruefErgebnis, ...); return end
+  if ev == "ITEM_SEARCH_RESULTS_UPDATED" then
+    pcall(liveItem, ...); pcall(scanItem, ...); pcall(GF.zieleCheck)
+    local key = ...; pcall(pruefErgebnis, type(key) == "table" and key.itemID or key); return
+  end
   if ev == "REPLICATE_ITEM_LIST_UPDATE" then pcall(vollscanLesen); return end
   if ev == "AUCTION_HOUSE_CLOSED" then pcall(ahZu); return end
   if ev == "BAG_UPDATE_DELAYED" then taschenHaken(); if GF.bankOffen then pcall(GF.punkteAktualisieren) end; return end
   if ev == "BANKFRAME_OPENED" then
     if C_Timer then C_Timer.After(1, function() pcall(GF.bankMerken) end) else pcall(GF.bankMerken) end
     GF.bankOffen = true
+    if GF.aktualisieren then pcall(GF.aktualisieren) end
     -- kurz warten, bis das Bankfenster seine Knoepfe gebaut hat
     if C_Timer then C_Timer.After(0.3, function() pcall(GF.punkteAktualisieren) end); C_Timer.After(1, function() pcall(GF.punkteAktualisieren) end)
     else pcall(GF.punkteAktualisieren) end
     return
   end
-  if ev == "BANKFRAME_CLOSED" then GF.bankOffen = false; return end
+  if ev == "BANKFRAME_CLOSED" then GF.bankOffen = false; if GF.aktualisieren then pcall(GF.aktualisieren) end; return end
   if ev == "PLAYERBANKSLOTS_CHANGED" or ev == "PLAYERREAGENTBANKSLOTS_CHANGED" then pcall(GF.bankMerken); pcall(GF.punkteAktualisieren); return end
   if ev == "PLAYER_LOGIN" then
-    hookTooltips(); tagPruefen(); pcall(taschenHaken); pcall(kaufHaken); B()
+    hookTooltips(); tagPruefen(); pcall(taschenHaken); pcall(kaufHaken); B(); pcall(GF.geldBuchen)
     if C_Timer then
       C_Timer.After(8, function() pcall(GF.zieleCheck) end)
       if C_Timer.NewTicker then C_Timer.NewTicker(300, function() pcall(GF.zieleCheck) end) end

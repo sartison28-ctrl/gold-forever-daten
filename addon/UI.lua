@@ -996,7 +996,7 @@ local function standardDaten()
           aktion = GF.istRohstoff(x.id) and { art = "buy", id = x.id, n = rest, max = x.maxKauf, text = "Kaufen " .. rest .. "×",
             tipp = "Klick 1: Gold Forever fragt den echten Preis für " .. rest .. " Stück an. Klick 2 („OK …“): kaufen. Liegt der Preis über " .. GF.geld(x.maxKauf) .. " je Stück, bricht Gold Forever selbst ab." } or nil,
           hinweis = hinweis .. (nurVoll and "\nPreis nur aus dem Vollscan – billige Angebote sind oft schnell weg. Vor dem Kauf suchen (Klick auf die Karte)." or ""),
-          zeile2 = mit(verb("lila", "Kaufen bis " .. GF.geld(x.maxKauf)), mit(schon > 0 and grau(schon .. " schon gekauft") or "",
+          zeile2 = mit(verb("lila", "Kaufen bis " .. GF.geld(x.maxKauf)), mit(schon > 0 and grau(schon .. " schon gekauft") or (x.treppe and grau("danach " .. (x.treppe.naechster and ("ab " .. GF.geld(x.treppe.naechster)) or "leer") .. " – Verkauf je " .. GF.geld(x.treppe.neu))) or "",
             nurVoll and verb("orange", "aus Vollscan – vor dem Kauf suchen") or grau(live and ("im AH gerade " .. GF.geld(live)) or "jetzt, solange so günstig"))) }
         d.kaufListe[#d.kaufListe + 1] = x
       end

@@ -816,6 +816,38 @@ function GF.warteListe()
   return out
 end
 
+-- 2.57.1 (Befund 51, Cuergos Schatzkarte): Menge nach der Preistreppe. Wer alle billigen Stufen bis zur naechsten
+-- Luecke kauft, hebt den Preis selbst an (2× vorgeschlagen, 4× gekauft -> naechstes Angebot 1g statt 70s, verkauft
+-- fuer 99s 99c). Fuer jede moegliche Menge: Wiederverkauf knapp unter dem dann naechsten Angebot (Deckel 1,3 × üblich,
+-- bewaehrt 1,5 ×), Gewinn nach 5 % Gebuehr. Risiko klein halten: nur Mengen, die auch beim Verkauf zum üblichen Preis
+-- keinen Verlust machen; hoechstens 1 Tagesumsatz und der Budget-Anteil.
+function GF.treppe(id, R, maxPreis, cap, budgetMax)
+  id = tonumber(id)
+  local l = GF.live[id]
+  if not (l and l.st and #l.st > 0 and R and R > 0 and maxPreis) then return nil end
+  local erf = GF.erfahrung(id)
+  local deckel = math.floor(R * ((erf and erf.bewaehrt) and 1.5 or 1.3))
+  cap = math.max(1, math.floor(cap or 1)); budgetMax = budgetMax or math.huge
+  local n, kosten, maxP, best = 0, 0, 0, nil
+  for k, x in ipairs(l.st) do
+    if x.p > maxPreis or n >= cap then break end
+    local take = math.min(x.q or 1, cap - n)
+    if kosten + take * x.p > budgetMax then take = math.floor((budgetMax - kosten) / x.p) end
+    if take <= 0 then break end
+    n = n + take; kosten = kosten + take * x.p; maxP = x.p
+    local naechster = (take < (x.q or 1)) and x.p or (l.st[k + 1] and l.st[k + 1].p) or nil
+    local neu = math.min((naechster and naechster - 1) or deckel, deckel)
+    if neu < maxP then neu = maxP end
+    local g = math.floor(neu * 0.95 * n - kosten)
+    local sicher = math.floor(math.min(R, neu) * 0.95 * n - kosten) >= 0
+    if sicher and g > 0 and (not best or g > best.gewinn) then
+      best = { n = n, kosten = kosten, max = maxP, neu = neu, gewinn = g, naechster = naechster }
+    end
+    if take < (x.q or 1) then break end
+  end
+  return best
+end
+
 function GF.budgetPlan()
   local gold = GetMoney and GetMoney() or 0
   local budget = math.floor(gold * (D().budget or 0.7))
@@ -847,7 +879,13 @@ function GF.budgetPlan()
         elseif markt < 1 then grund[id] = "schon genug gekauft (Grenze 5 % der Tagesverkäufe)"
         else
           if verfuegbar then markt = math.min(markt, verfuegbar) end
-          kand[#kand + 1] = { id = id, i = i, ziel = ziel, stueck = stueck, markt = markt, maxKauf = maxKauf, schon = pos and pos.n or 0 }
+          local k = { id = id, i = i, ziel = ziel, stueck = stueck, markt = markt, maxKauf = maxKauf, schon = pos and pos.n or 0 }
+          -- 2.57.1: Preistreppe – mehr Menge, wenn der Wiederverkauf danach hoeher liegt (Deckel: 1 Tagesumsatz)
+          local T = GF.treppe(id, R, maxKauf, math.max(markt, math.floor(absatz)) - (pos and pos.n or 0), math.floor(budget * 0.3))
+          if T and T.n >= 1 and T.gewinn > stueck * markt then
+            k.markt, k.stueck, k.maxKauf, k.ziel, k.treppe = T.n, T.gewinn / T.n, T.max, T.neu, T
+          end
+          kand[#kand + 1] = k
         end
       else grund[id] = "Gewinn je Stück zu klein (" .. GF.geld(math.max(0, stueck)) .. ")" end
     end
@@ -864,7 +902,7 @@ function GF.budgetPlan()
     elseif menge * k.stueck < 500 then grund[k.id] = "lohnt nicht: Gewinn " .. GF.geld(menge * k.stueck) .. " < 5s bei deinem Budget"
     elseif #deals >= 5 or rest < 100 then grund[k.id] = "Plan ist voll – andere Käufe bringen mehr"
     else
-      k.menge = menge; k.gewinn = menge * k.stueck; deals[#deals + 1] = k
+      k.menge = menge; k.gewinn = math.floor(menge * k.stueck); deals[#deals + 1] = k
       rest = rest - menge * k.i.p
     end
   end
@@ -1516,7 +1554,12 @@ local function kaufAbschliessen()
   if not offen then return end
   local k = offen; offen = nil
   local ausgabe = k.geld - GetMoney()
-  if ausgabe > 0 then local v, ziel = kaufVorschlag(k.id); buchen("kauf", k.id, k.n, -ausgabe, v, ziel) end
+  if ausgabe > 0 then
+    local v, ziel = kaufVorschlag(k.id); buchen("kauf", k.id, k.n, -ausgabe, v, ziel)
+    -- 2.57.1: Sniper-Kauf im Bilanz-Buch markieren (getrennte Auswertung im Lernsystem)
+    local um = GF.unterbieterMerk and GF.unterbieterMerk[k.id]
+    if um and um.sn and time() - um.t < 900 then local bb = B().buch; if bb[#bb] then bb[#bb].sn = true end end
+  end
 end
 local function kaufHaken()
   if not C_AuctionHouse or GF.kaufGehakt then return end
@@ -2130,6 +2173,10 @@ function GF.kaufPreisDa(unit, total)
   if k.max and unit and unit > k.max then
     pcall(C_AuctionHouse.CancelCommoditiesPurchase)
     GF.kaufLauf = nil
+    if GF.sniper and GF.sniper.treffer and GF.sniper.treffer.id == k.id then
+      if GF.sniperLog then GF.sniperLog(GF.sniper.treffer, "zu teuer") end
+      GF.sniper.treffer = nil
+    end
     print(GOLD .. "Gold Forever:" .. ENDE .. " Kauf abgebrochen – im AH kostet es jetzt " .. GF.geld(unit) .. " je Stück, Höchstpreis " .. GF.geld(k.max) .. ". Das Tief ist vorbei.")
   end
   if GF.aktualisieren then pcall(GF.aktualisieren) end
@@ -2923,12 +2970,26 @@ function GF.sniperBewerten(id)
   if n < 1 then return nil end
   local neu = math.min(R, (naechster and naechster > maxP) and (naechster - 1) or R)
   local gewinn = math.floor(neu * 0.95 * n - kosten)
+  -- 2.57.1: Preistreppe (bis 1 Tagesumsatz) – lohnt das Aufkaufen bis zur naechsten Luecke mehr?
+  local T = GF.treppe(id, R, math.floor(R * grenze), math.max(cap, math.floor(i.u or 0)), budget)
+  if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
   if gewinn < SN_MIN then return nil end
   return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(),
-    abw = math.floor((1 - maxP / R) * 100 + 0.5) }
+    abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil }
 end
 
 -- Anzeige: Leiste oben am Auktionshaus
+-- 2.57.1: Sniper-Protokoll (nur Daten fuer das Lernsystem): jeder Treffer mit Ausgang
+-- GoldForeverDB.sniper.log = { {t, id, n, max, R, neu, gewinn, abw, aus = "gekauft"|"verfallen"|"übersprungen"|"zu teuer"|"fehler"} } (max. 500)
+local function snLog(t, aus)
+  if not t or t.geloggt then return end
+  t.geloggt = true
+  local d = GoldForeverDB.sniper or {}; GoldForeverDB.sniper = d
+  d.log = d.log or {}
+  d.log[#d.log + 1] = { t = t.t, id = t.id, n = t.n, max = t.max, R = t.R, neu = t.neu, gewinn = t.gewinn, abw = t.abw, aus = aus, h = tonumber(date("%H", t.t)), tr = t.treppe }
+  while #d.log > 500 do table.remove(d.log, 1) end
+end
+GF.sniperLog = snLog
 local snF
 local function snText(t) return (t and t.n .. "× " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id))) or "" end
 local function snBindung(an)
@@ -2944,7 +3005,7 @@ function GF.sniperZeigen()
   snF.an:SetText(S.an and "Sniper: AN" or "Sniper: aus")
   snF.an.bg:SetColorTexture(S.an and 0.29 or 0.3, S.an and 0.87 or 0.3, S.an and 0.5 or 0.3, 0.35)
   local t = S.treffer
-  if t and time() - t.t > 45 and not GF.kaufLauf then S.treffer = nil; t = nil end
+  if t and time() - t.t > 45 and not GF.kaufLauf then snLog(t, "verfallen"); S.treffer = nil; t = nil end
   local k = GF.kaufLauf
   if t then
     snF.knopf:Show()
@@ -2969,7 +3030,7 @@ local function snKlick(self, knopf)
   local S = GF.sniper
   local t = S.treffer; if not t then return end
   if knopf == "RightButton" then
-    S.skip = S.skip or {}; S.skip[t.id] = time()
+    S.skip = S.skip or {}; S.skip[t.id] = time(); snLog(t, "übersprungen")
     if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
     S.treffer = nil; GF.sniperZeigen(); return
   end
@@ -2981,13 +3042,14 @@ local function snKlick(self, knopf)
       print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) ..
         ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
       local d = snDB(); local tag = date("%Y-%m-%d"); d.treffer[tag] = (d.treffer[tag] or 0) + 1
+      t.bezahlt = kk.unit; snLog(t, "gekauft")
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
   elseif not k then
     GF.unterbieterMerk = GF.unterbieterMerk or {}
-    GF.unterbieterMerk[t.id] = { neu = t.neu, t = time() } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
+    GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
     local ok, err = GF.kaufStarten(t.id, t.n, t.max)
-    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); S.treffer = nil end
+    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil end
   end
   GF.sniperZeigen()
 end

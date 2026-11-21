@@ -24,7 +24,7 @@ GF.kaufStarten(5631, 5, 40); GF.kaufPreisDa(55, 275)
 zeige("Preis gestiegen -> log " .. GoldForeverDB.sniper.log[#GoldForeverDB.sniper.log].aus .. " zuspaet " .. tostring(S.zuspaet and S.zuspaet.name))
 -- 4) Stapel-Auktion: ganzer Stapel, Betrag = Rohwert
 GoldForeverDB.einzelItem = GoldForeverDB.einzelItem or {}; GoldForeverDB.einzelItem[5631] = true
-S.hits = {}; S.treffer = nil; GF.kaufLauf = nil
+S.hits = {}; S.treffer = nil; GF.kaufLauf = nil; S.sperreBis = nil
 GF.live[5631] = { t = JETZT, p = 30, einzel = true, st = { { p = 30, q = 40, a = 201, roh = 1200 }, { p = 31, q = 1, a = 202, roh = 31 }, { p = 70, q = 1, a = 203, roh = 70 } } }
 local t = GF.sniperBewerten(5631)
 zeige("Stapel-Treffer n=" .. tostring(t and t.n) .. " grund " .. tostring(S.letzterGrund))

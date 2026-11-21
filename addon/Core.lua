@@ -3383,13 +3383,19 @@ function GF.sniperBewerten(id)
   local neu = math.min(Rv, naechster and (naechster - 1) or Rv)
   local gewinn = math.floor(neu * 0.95 * n - kosten)
   -- 2.57.1: Preistreppe (bis 1 Tagesumsatz) – lohnt das Aufkaufen bis zur naechsten Luecke mehr?
-  local deckel = halb
+  -- 2.63.4 (Befund 67, Schildkroetenschuppe 21.11.): vorhandener Bestand (Tasche/Bank/AH) zaehlt mit
+  local schonVorher = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
+  local deckel = halb - schonVorher
   if R < 100 then deckel = math.min(deckel, 200) end
-  if knaller then deckel = math.max(deckel, math.floor(umsatz)) end -- Knaller: bis 1 Tagesumsatz, kein Billig-Deckel
+  if knaller then deckel = math.max(deckel, math.floor(umsatz) - schonVorher) end -- Knaller: bis 1 Tagesumsatz, kein Billig-Deckel
+  if deckel < 1 then return snNein(id, "du hast schon genug (" .. schonVorher .. ")") end
   local T = GF.treppe(id, R, math.floor(Rv * grenze), deckel, budget, Rv)
   if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
   if n > deckel then return snNein(id, "Menge zu hoch", { p = maxP, R = Rv, n = n }) end
   if gewinn < SN_MIN then return snNein(id, gewinn <= 0 and "kein Gewinn (gleich billige Reste / nächstes Angebot zu nah)" or "Gewinn < 3s", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
+  -- 2.63.4 (Wunsch Alex 21.11. 16:57): Gewinn muss zum Einsatz passen – mind. 10 % des Einsatzes
+  -- (1–2g Einsatz -> 10–20s ok; 15g Einsatz -> mind. 1g 50s)
+  if gewinn < kosten * 0.10 then return snNein(id, "Gewinn < 10 % vom Einsatz", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
   -- 2.61: neue Zone (weniger als 15 % unter ueblich) nur mit mind. 10s Gewinn nach Gebuehr – sonst lohnt der Klick nicht
   if maxP > Rv * 0.85 and gewinn < SN_MIN_LEINE then return snNein(id, "12-%-Zone: Gewinn < 10s", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
   frisch[#frisch + 1] = time()
@@ -3409,6 +3415,12 @@ function GF.sniperBewerten(id)
   elseif tage > 0.5 then risikoGrund = "Menge > ½ Tag Umsatz"
   elseif Rv < R * 0.85 then risikoGrund = "verkauft meist unter üblich" end
   local risiko = risikoGrund and "risiko" or (((erf and erf.bewaehrt) or (umsatz >= 200 and tage <= 0.25)) and "sicher" or "ok")
+  -- 2.63.4: hoher Einsatz (>= 5g) nur, wenn der Treffer nicht riskant ist und der Verkaufspreis durch echte Verkaeufe belegt ist
+  if kosten >= 50000 and not knaller then
+    local _, belegt = GF.verkaufsRef(id, R)
+    if risiko == "risiko" then return snNein(id, "hoher Einsatz bei Risiko (" .. (risikoGrund or "") .. ")", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
+    if not (belegt or (rl and rl.vp and rl.vp > 0)) then return snNein(id, "hoher Einsatz ohne echte Verkaufspreise", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
+  end
   return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel, schon = schon,
     abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
 end
@@ -3456,7 +3468,7 @@ function GF.sniperZeigen()
       snF.knopf.t:SetText("Preis wird geholt …")
     else
       local RF = ({ sicher = GRUEN .. "SICHER  ", ok = BLAU .. "OK  ", risiko = ORANGE .. "RISIKO  " })[t.risiko or "ok"] .. ENDE
-      snF.knopf.t:SetText(RF .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. ENDE .. "   [" .. snDB().taste .. "]")
+      snF.knopf.t:SetText(RF .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE .. "   [" .. snDB().taste .. "]")
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
     snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
@@ -3624,9 +3636,12 @@ local function snBrowse()
   S.browseT, S.bIdx, S.browseN, S.aktuell = time(), 0, 0, nil
   S.browseLaeuft = ok
   S.zyklus = (S.zyklus or 0) + 1
-  -- Merkliste (eigene/bewaehrte) einmal je Durchgang mit pruefen
+  -- 2.63.4 (Befund 68): Merkliste nur noch einzeln suchen, wenn die breite Durchsuche das Item im letzten
+  -- Durchgang nicht gesehen hat (andere Warenklasse/kein Angebot) – gesehene Items bewertet die Durchsuche selbst
   S.queue = S.queue or {}
-  for _, id in ipairs(GF.sniperListe()) do S.queue[#S.queue + 1] = id end
+  local gesehen = S.gesehen or {}
+  for _, id in ipairs(GF.sniperListe()) do if not gesehen[id] then S.queue[#S.queue + 1] = id end end
+  S.gesehen = {}
 end
 -- Browse-Ergebnisse auswerten (AUCTION_HOUSE_BROWSE_RESULTS_UPDATED / _ADDED)
 function GF.sniperBrowse()
@@ -3639,6 +3654,7 @@ function GF.sniperBrowse()
   for k = (S.bIdx or 0) + 1, #res do
     local r = res[k]
     local id = r and r.itemKey and r.itemKey.itemID
+    if id then S.gesehen = S.gesehen or {}; S.gesehen[id] = true end
     if id and ids[id] and r.minPrice and not drin[id] and not (S.geprueft[id] and time() - S.geprueft[id] < 60)
       and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) and not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
       local i = GF.info(id)
@@ -3647,7 +3663,7 @@ function GF.sniperBrowse()
       if i then R, _, _, eingebr = GF.referenz(id, i) end
       local grund
       if not i or i.vb then grund = "Händlerware / keine Infos"
-      elseif (i.u or 0) < 50 then grund = "Umsatz < 50/Tag"
+      elseif (i.u or 0) < 50 and not snDB().eigen[id] then grund = "Umsatz < 50/Tag"
       elseif not R then grund = "kein Referenzpreis"
       elseif eingebr then grund = "Markt eingebrochen"
       elseif not GF.handelbar(i) then grund = "nicht handelbar"

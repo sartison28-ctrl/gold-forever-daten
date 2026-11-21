@@ -32,3 +32,17 @@ GF.sniper.zuletzt = nil
 GF.sniper.ausstehend = { t = tt2, kk = { n = 5, unit = 40, total = 200 }, name = "Wuttrank", zeit = time() }
 GF.sniperKaufErgebnis(true)
 zeige("Kauf ok: log=" .. GoldForeverDB.sniper.log[#GoldForeverDB.sniper.log].aus .. " zuletzt=" .. tostring(GF.sniper.zuletzt and GF.sniper.zuletzt.n))
+-- 2.64 grün = 1 Tastendruck, Modus Sicher
+KAEUFE = {}
+C_AuctionHouse.StartCommoditiesPurchase = function(id, n) KAEUFE[#KAEUFE + 1] = { "start", id, n } end
+C_AuctionHouse.ConfirmCommoditiesPurchase = function(id, n) KAEUFE[#KAEUFE + 1] = { "ok", id, n } end
+GF.kaufLauf = nil
+local tg = { id = 5631, n = 5, max = 40, neu = 69, gewinn = 100, kosten = 200, R = 60, Rv = 60, abw = 30, t = time(), risiko = "sicher" }
+GF.sniper.treffer = tg; GF.kaufStarten(5631, 5, 40); GF.kaufPreisDa(40, 200)
+GoldForeverSniperKnopf._scripts.OnClick(GoldForeverSniperKnopf, "LeftButton")
+zeige("Grün 1 Druck: " .. tostring(KAEUFE[#KAEUFE] and KAEUFE[#KAEUFE][1]))
+GF.sniper.modus = "sicher"; GF.sniper.treffer = nil; GF.kaufLauf = nil
+GF.live[5631] = { t = JETZT, p = 40, st = { { p = 40, q = 50 }, { p = 70, q = 50 } } }
+GoldForeverDB.einzelItem[5631] = nil; GF.sniper.hits = {}
+GF.sniper.suche = 5631; GF.sniperErgebnis(5631)
+zeige("Modus Sicher, oranger Treffer: " .. tostring(GF.sniper.treffer))

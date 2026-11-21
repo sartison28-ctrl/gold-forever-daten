@@ -3327,6 +3327,15 @@ local function snNein(id, grund, x)
   while #f > 60 do table.remove(f, 1) end
   return nil
 end
+-- 2.64 (Befund Schildkroetenschuppe): eigener echter Verkaufspreis der letzten 7 Tage (Durchschnitt je Stueck vor Gebuehr)
+function GF.eigenerVK(id)
+  local ab = time() - 7 * 86400
+  local n, g = 0, 0
+  for _, x in ipairs((GoldForeverDB.bilanz and GoldForeverDB.bilanz.buch) or {}) do
+    if x.art == "verk" and x.id == id and x.t >= ab and (x.n or 0) > 0 then n = n + x.n; g = g + (x.betrag or 0) / 0.95 end
+  end
+  if n >= 5 then return math.floor(g / n), n end
+end
 function GF.sniperBewerten(id)
   id = tonumber(id)
   local l = GF.live[id]; if not (l and l.st and #l.st > 0 and not l.voll) then return snNein(id, "schon weg / kein Angebot") end
@@ -3343,6 +3352,13 @@ function GF.sniperBewerten(id)
   local h = S.hits[id] or {}
   local frisch = {}; for _, t0 in ipairs(h) do if time() - t0 < 600 then frisch[#frisch + 1] = t0 end end
   S.hits[id] = frisch
+  -- 2.64 (Wunsch Alex): Hektik-Sperre nur, wenn die letzten Treffer NICHT gekauft wurden (übersprungen/verfallen/zu spät)
+  local gekauftZuletzt = false
+  for k2 = #(snDB().log or {}), math.max(1, #(snDB().log or {}) - 20), -1 do
+    local lg = snDB().log[k2]
+    if lg and lg.id == id and time() - (lg.t or 0) < 600 and lg.aus == "gekauft" then gekauftZuletzt = true; break end
+  end
+  if gekauftZuletzt then frisch = {} end
   -- 2.61: sehr schnell laufende Ware (>= 500/Tag laut Daten) erst ab dem 4. Treffer pausieren
   if #frisch >= (((i.u or 0) >= 500) and 3 or 2) then
     S.skip = S.skip or {}; S.skip[id] = time() + 1200 -- 600 s Ruhe aus snTick + 1200 = 30 Min.
@@ -3364,6 +3380,10 @@ function GF.sniperBewerten(id)
   local budget = gold
   -- 2.58.3: sicher rechnen mit dem echten Verkaufspreis; "Knaller" (Preis <= 50 % davon) bremst die Menge nicht
   local Rv = GF.verkaufsRef(id, R)
+  -- 2.64: hast du das Item zuletzt billiger verkauft, rechnet der Sniper mit deinem echten Verkaufspreis
+  local eVK = GF.eigenerVK(id)
+  local eigenVKgenutzt = false
+  if eVK and eVK < Rv then Rv = eVK; eigenVKgenutzt = true end
   local billigsterP = l.st[1] and l.st[1].p or math.huge
   local knaller = billigsterP <= Rv * 0.5
   if budget < 100 then return snNein(id, "kein Gold") end
@@ -3413,7 +3433,9 @@ function GF.sniperBewerten(id)
   elseif einzel then risikoGrund = "Einzelware – Preis schwankt"
   elseif GF.faelltTage(id) then risikoGrund = "Preis fällt"
   elseif tage > 0.5 then risikoGrund = "Menge > ½ Tag Umsatz"
-  elseif Rv < R * 0.85 then risikoGrund = "verkauft meist unter üblich" end
+  elseif Rv < R * 0.85 then risikoGrund = "verkauft meist unter üblich"
+  elseif not naechster or naechster > Rv * 1.5 then risikoGrund = "kaum Angebote darüber – Preis unsicher" -- 2.64 Reset-Schutz (Befund 56)
+  end
   local risiko = risikoGrund and "risiko" or (((erf and erf.bewaehrt) or (umsatz >= 200 and tage <= 0.25)) and "sicher" or "ok")
   -- 2.63.4: hoher Einsatz (>= 5g) nur, wenn der Treffer nicht riskant ist und der Verkaufspreis durch echte Verkaeufe belegt ist
   if kosten >= 50000 and not knaller then
@@ -3421,7 +3443,8 @@ function GF.sniperBewerten(id)
     if risiko == "risiko" then return snNein(id, "hoher Einsatz bei Risiko (" .. (risikoGrund or "") .. ")", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
     if not (belegt or (rl and rl.vp and rl.vp > 0)) then return snNein(id, "hoher Einsatz ohne echte Verkaufspreise", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
   end
-  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel, schon = schon,
+  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel, schon = schon, eigenVK = eigenVKgenutzt and eVK or nil,
+    portionen = (umsatz > 0 and n > umsatz * 0.25) and math.min(5, math.ceil(n / math.max(1, umsatz * 0.25))) or nil,
     abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
 end
 
@@ -3449,10 +3472,15 @@ function GF.sniperZeigen()
   local S = GF.sniper
   snF:SetShown(GF.ah ~= nil)
   if not GF.ah then snBindung(false); return end
-  snF.an:SetText(S.an and "Sniper: AN" or "Sniper: aus")
-  snF.an.bg:SetColorTexture(S.an and 0.29 or 0.3, S.an and 0.87 or 0.3, S.an and 0.5 or 0.3, 0.35)
+  local an1, an2 = S.an and S.modus == "sicher", S.an and S.modus ~= "sicher"
+  snF.sicher.bg:SetColorTexture(an1 and 0.29 or 0.3, an1 and 0.87 or 0.3, an1 and 0.5 or 0.3, an1 and 0.55 or 0.3)
+  snF.alle.bg:SetColorTexture(an2 and 0.22 or 0.3, an2 and 0.74 or 0.3, an2 and 0.97 or 0.3, an2 and 0.55 or 0.3)
+  snF.sicher:SetText(an1 and "Sicher: AN" or "Sicher"); snF.alle:SetText(an2 and "Alle: AN" or "Alle")
   local t = S.treffer
-  if t and time() - t.t > 45 and not GF.kaufLauf then snLog(t, "verfallen"); S.treffer = nil; t = nil end
+  if t and time() - t.t > 45 then
+    if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
+    if not GF.kaufLauf then snLog(t, "verfallen"); S.treffer = nil; t = nil end
+  end
   local k = GF.kaufLauf
   if t then
     snF.knopf:Show()
@@ -3462,17 +3490,20 @@ function GF.sniperZeigen()
     snF.icon:SetTexture((C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(t.id)) or (GetItemIcon and GetItemIcon(t.id)) or 134400); snF.icon:Show()
     local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
     snF.name:SetText(name); snF.name:Show()
-    if k and k.id == t.id and k.unit then
-      snF.knopf.t:SetText("BESTÄTIGEN  " .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "  [" .. snDB().taste .. "]")
+    local RF = ({ sicher = GRUEN .. "SICHER  ", ok = BLAU .. "OK  ", risiko = ORANGE .. "RISIKO  " })[t.risiko or "ok"] .. ENDE
+    local gtxt = GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE
+    if k and k.id == t.id and k.unit and (t.risiko == "sicher" or t.scharf) then
+      snF.knopf.t:SetText(RF .. (t.scharf and (GOLD .. "JETZT BESTÄTIGEN  " .. ENDE) or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "   " .. gtxt .. "   [" .. snDB().taste .. "]")
+    elseif k and k.id == t.id and k.unit then
+      snF.knopf.t:SetText(RF .. "KAUFEN (2× drücken)  " .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "   " .. gtxt .. "   [" .. snDB().taste .. "]")
     elseif k and k.id == t.id then
-      snF.knopf.t:SetText("Preis wird geholt …")
+      snF.knopf.t:SetText(RF .. "Preis wird geholt …  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. gtxt)
     else
-      local RF = ({ sicher = GRUEN .. "SICHER  ", ok = BLAU .. "OK  ", risiko = ORANGE .. "RISIKO  " })[t.risiko or "ok"] .. ENDE
       snF.knopf.t:SetText(RF .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE .. "   [" .. snDB().taste .. "]")
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
     snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
-      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. ((t.schon or 0) > 0 and not (t.risikoGrund or ""):find("schon") and (" · du hast " .. t.schon) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. " · Rechtsklick: überspringen" .. ENDE)
+      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. ((t.schon or 0) > 0 and not (t.risikoGrund or ""):find("schon") and (" · du hast " .. t.schon) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. (t.portionen and (" · in " .. t.portionen .. " Portionen einstellen") or "") .. (t.eigenVK and " · rechnet mit deinem Verkaufspreis" or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
   else
     snF.knopf:Hide(); snBindung(false)
@@ -3489,7 +3520,7 @@ function GF.sniperZeigen()
     if zl and GF.imAH and (GF.imAH(zl.id) or 0) > (zl.ahVorher or 0) then S.zuletzt = nil; zl = nil end
     if zl and time() - zl.t < 600 then
       was = GRUEN .. "Gekauft: " .. zl.n .. "× " .. ((((C_Item and C_Item.GetItemInfo or GetItemInfo)(zl.id)) or ("Item " .. zl.id))) ..
-        " – aus dem Briefkasten holen, dann sofort einstellen je " .. GF.geld(zl.neu) .. ENDE .. GRAU .. " · " .. was
+        " – aus dem Briefkasten holen, dann sofort einstellen je " .. GF.geld(zl.neu) .. (zl.portionen and (" (in " .. zl.portionen .. " Portionen)") or "") .. ENDE .. GRAU .. " · " .. was
     end
     snF.info:SetText(S.an and (GRAU .. was .. " · Kandidaten " .. (S.kandidaten or 0) .. " · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
       or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sniper“ startet die Suche · Taste " .. snDB().taste .. ENDE))
@@ -3530,6 +3561,10 @@ local function snKlick(self, knopf)
     GF.sniperZeigen(); return
   end
   local k = GF.kaufLauf
+  -- 2.64 (Wunsch Alex): grün = ein Tastendruck (Kauf ist vorbereitet); blau/orange = zwei Tastendrücke
+  if k and k.id == t.id and k.unit and t.risiko ~= "sicher" and not t.scharf then
+    t.scharf = true; GF.sniperZeigen(); return
+  end
   if k and k.id == t.id and k.unit then
     local ok, err, kk = GF.kaufBestaetigen()
     local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
@@ -3539,9 +3574,12 @@ local function snKlick(self, knopf)
       S.ausstehend = { t = t, kk = kk, name = name, zeit = time() }
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
+  elseif k and k.id == t.id then
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Preis wird noch geholt – gleich noch einmal.")
   elseif not k then
     GF.unterbieterMerk = GF.unterbieterMerk or {}
     GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
+    if t.risiko ~= "sicher" then t.scharf = true end -- Start per Klick zaehlt als erster Druck
     local ok, err = GF.kaufStarten(t.id, t.n, t.max)
     if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil end
   end
@@ -3559,7 +3597,7 @@ function GF.sniperKaufErgebnis(ok)
       ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
     d.treffer[tag] = (d.treffer[tag] or 0) + 1
     t.bezahlt = kk.unit; snLog(t, "gekauft")
-    S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0 }
+    S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0, portionen = t.portionen }
     d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
   else
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " zu spät – " .. name .. " war schon weg." .. ENDE)
@@ -3575,11 +3613,20 @@ local function snBauen()
   snF:SetSize(600, 66); snF:SetFrameStrata("HIGH")
   if AuctionHouseFrame then snF:SetPoint("BOTTOM", AuctionHouseFrame, "TOP", 0, 6) else snF:SetPoint("TOP", 0, -40) end
   snF.bg = snF:CreateTexture(nil, "BACKGROUND"); snF.bg:SetAllPoints(); snF.bg:SetColorTexture(0.06, 0.07, 0.1, 0.92)
-  snF.an = CreateFrame("Button", nil, snF); snF.an:SetSize(96, 22); snF.an:SetPoint("TOPLEFT", 6, -5)
-  snF.an.bg = snF.an:CreateTexture(nil, "BACKGROUND"); snF.an.bg:SetAllPoints()
-  snF.an.fs = snF.an:CreateFontString(nil, "OVERLAY", "GameFontNormal"); snF.an.fs:SetPoint("CENTER"); snF.an:SetFontString(snF.an.fs)
-  snF.an:SetScript("OnClick", function() GF.sniperUmschalten() end)
-  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.an, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
+  -- 2.64 (Wunsch Alex): zwei Sniper – „Sicher“ (nur grüne Treffer, 1 Tastendruck) und „Alle“ (grün/blau/orange; blau/orange 2 Tastendrücke)
+  local function modusKnopf(modus, titel, x, tipp)
+    local k = CreateFrame("Button", nil, snF); k:SetSize(78, 22); k:SetPoint("TOPLEFT", x, -5)
+    k.bg = k:CreateTexture(nil, "BACKGROUND"); k.bg:SetAllPoints()
+    k.fs = k:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); k.fs:SetPoint("CENTER"); k:SetFontString(k.fs); k:SetText(titel)
+    k:SetScript("OnClick", function() GF.sniperUmschalten(nil, modus) end)
+    k:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Sniper – " .. titel); GameTooltip:AddLine(tipp, 0.6, 0.6, 0.65, true); GameTooltip:Show() end)
+    k:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return k
+  end
+  snF.sicher = modusKnopf("sicher", "Sicher", 6, "Nur grüne (sichere) Treffer. Kauf mit einem Tastendruck. Nochmal klicken = aus.")
+  snF.alle = modusKnopf("alle", "Alle", 88, "Grüne, blaue und orange Treffer. Blau/orange brauchen zwei Tastendrücke (Schutz vor Verdrücken). Nochmal klicken = aus.")
+  snF.an = snF.sicher
+  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.alle, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
   local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
   -- 2.58.2: Item-Icon + Name links, Knopf rechts daneben
   snF.icon = snF:CreateTexture(nil, "ARTWORK"); snF.icon:SetSize(30, 30); snF.icon:SetPoint("BOTTOMLEFT", 6, 5); snF.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); snF.icon:Hide()
@@ -3633,7 +3680,10 @@ local function snBrowse()
     C_AuctionHouse.SendBrowseQuery({ searchString = "", sorts = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } },
       filters = {}, itemClassFilters = filter })
   end)
-  S.browseT, S.bIdx, S.browseN, S.aktuell = time(), 0, 0, nil
+  -- 2.64: Dauer je Durchgang messen (fuer „Warum nicht?“)
+  if S.zyklusStart then local D2 = GF.sniperDiag(); D2.dauer = D2.dauer or {}; table.insert(D2.dauer, time() - S.zyklusStart); while #D2.dauer > 30 do table.remove(D2.dauer, 1) end end
+  S.zyklusStart = time()
+  S.browseT, S.bIdx, S.browseN, S.aktuell, S.mehrOffen = time(), 0, 0, nil, false
   S.browseLaeuft = ok
   S.zyklus = (S.zyklus or 0) + 1
   -- 2.63.4 (Befund 68): Merkliste nur noch einzeln suchen, wenn die breite Durchsuche das Item im letzten
@@ -3675,6 +3725,9 @@ function GF.sniperBrowse()
       if not grund then
         table.insert(S.queue, 1, id); drin[id] = true
         S.kandidaten = (S.kandidaten or 0) + 1
+        S.fundZeit = S.fundZeit or {}; S.fundZeit[id] = time()
+        S.queueWert = S.queueWert or {}
+        S.queueWert[id] = (GF.verkaufsRef(id, R) * 0.95 - r.minPrice) * math.min(200, math.max(1, (i.u or 0) * 0.25))
       elseif grund ~= "zu teuer" and R and r.minPrice <= R * 0.88 then
         local D2 = GF.sniperDiag(); D2.browseIds = D2.browseIds or {}
         if not D2.browseIds[id] then D2.browseIds[id] = grund; D2.browse[grund] = (D2.browse[grund] or 0) + 1 end
@@ -3683,34 +3736,41 @@ function GF.sniperBrowse()
   end
   if #res > (S.bIdx or 0) then S.browseNeu = time() end -- 2.61: Fortschritt merken
   S.bIdx = #res; S.browseN = #res
+  -- 2.64: beste Kandidaten zuerst (erwarteter Gewinn je Stueck x moegliche Menge)
+  if S.queueWert then table.sort(S.queue, function(a2, b2) return (S.queueWert[a2] or 0) > (S.queueWert[b2] or 0) end) end
   if C_AuctionHouse.HasFullBrowseResults and not C_AuctionHouse.HasFullBrowseResults() and C_AuctionHouse.RequestMoreBrowseResults then
-    pcall(C_AuctionHouse.RequestMoreBrowseResults)
+    S.mehrOffen = true -- naechste Seite erst, wenn die Kandidaten geprueft sind (snSchritt)
   else
     S.browseLaeuft = false; S.letzterBrowse = time()
   end
   GF.sniperZeigen()
+  if C_Timer then C_Timer.After(0.05, GF.sniperSchritt) end
   return true
 end
-local function snTick()
+-- 2.64 (schneller): ein Schritt = naechste Detail-Suche oder naechste Durchsuche-Seite. Wird vom Takt UND direkt nach
+-- jeder Antwort aufgerufen (nicht mehr bis zu 1,6 Sek. warten). Kandidaten haben Vorrang vor weiteren Seiten: ein
+-- Fund auf Seite 1 wird sofort geprueft, nicht erst nach der ganzen Durchsuche (Grund fuer „war schon weg“).
+local function snSchritt()
   local S = GF.sniper
-  if not (S.an and GF.ah) then S.laeuft = false; return end
-  if C_Timer then C_Timer.After(SN_TAKT, snTick) end
+  if not (S.an and GF.ah) then return end
   if S.treffer or snPause() then GF.sniperZeigen(); return end
-  -- Detail-Suche noch offen (max. 5 Sek.)
-  if S.suche and time() - (S.sucheT or 0) < 5 then return end
+  if S.suche and time() - (S.sucheT or 0) < 3 then return end
   if S.suche then local D2 = GF.sniperDiag(); D2.g["Suche ohne Antwort"] = (D2.g["Suche ohne Antwort"] or 0) + 1 end
   S.suche = nil
+  -- AH-Sperre von Blizzard beachten (sonst gehen Anfragen verloren)
+  if C_AuctionHouse.IsThrottledMessageSystemReady and not C_AuctionHouse.IsThrottledMessageSystemReady() then return end
   local browse = C_AuctionHouse and C_AuctionHouse.SendBrowseQuery
   if browse then
-    -- 2.61 (Sniper-Check): Durchsuche nicht mehr nach festen 20 Sek. abbrechen – solange neue Seiten kommen
-    -- (letzte vor < 10 Sek.), weiterlaufen lassen; sonst sah der Sniper bei langen Listen (nach Preis sortiert)
-    -- die teureren Items am Ende nie. Hoechstens 90 Sek. je Durchgang.
-    if S.browseLaeuft and time() - (S.browseT or 0) < 90 and time() - math.max(S.browseT or 0, S.browseNeu or 0) < 10 then return end
-    S.browseLaeuft = false
     S.queue = S.queue or {}
     local id = table.remove(S.queue, 1)
-    if id then snSuche(id) else snBrowse() end
-    GF.sniperZeigen(); return
+    if id then snSuche(id); GF.sniperZeigen(); return end
+    -- keine Kandidaten offen: Durchsuche fortsetzen bzw. neu starten
+    if S.browseLaeuft then
+      if S.mehrOffen then S.mehrOffen = false; pcall(C_AuctionHouse.RequestMoreBrowseResults); S.browseNeu = time()
+      elseif time() - math.max(S.browseT or 0, S.browseNeu or 0) >= 10 or time() - (S.browseT or 0) >= 90 then S.browseLaeuft = false end
+      GF.sniperZeigen(); return
+    end
+    snBrowse(); GF.sniperZeigen(); return
   end
   -- ohne Browse (aeltere Schnittstelle): Merkliste reihum wie 2.57
   local liste = GF.sniperListe()
@@ -3722,6 +3782,13 @@ local function snTick()
   snSuche(id)
   GF.sniperZeigen()
 end
+GF.sniperSchritt = function() pcall(snSchritt) end
+local function snTick()
+  local S = GF.sniper
+  if not (S.an and GF.ah) then S.laeuft = false; return end
+  if C_Timer then C_Timer.After(0.8, snTick) end
+  snSchritt()
+end
 -- Ergebnis einer Sniper-Suche (aus COMMODITY_SEARCH_RESULTS_UPDATED, nach liveCommodity)
 function GF.sniperErgebnis(id)
   local S = GF.sniper
@@ -3729,16 +3796,33 @@ function GF.sniperErgebnis(id)
   if not (S.an and S.suche == id) then return false end
   S.suche = nil; S.aktuell = nil
   local t = GF.sniperBewerten(id)
+  -- 2.64 (Wunsch Alex 21.11. 17:32): Modus „Sicher“ zeigt nur grüne Treffer
+  if t and S.modus == "sicher" and t.risiko ~= "sicher" then
+    local D2 = GF.sniperDiag(); D2.g["Modus Sicher: " .. (t.risiko == "risiko" and "orange" or "blau") .. " ausgeblendet"] = (D2.g["Modus Sicher: " .. (t.risiko == "risiko" and "orange" or "blau") .. " ausgeblendet"] or 0) + 1
+    t = nil
+  end
   if t then
     local D2 = GF.sniperDiag(); D2.kand = D2.kand + 1
     if S.treffer then D2.g["anderer Treffer war offen"] = (D2.g["anderer Treffer war offen"] or 0) + 1 else D2.treffer = D2.treffer + 1 end
+    -- 2.64: Zeit vom Durchsuche-Fund bis zur Anzeige messen
+    local seit = S.fundZeit and S.fundZeit[id]
+    if seit then t.sek = time() - seit; D2.bisTreffer = D2.bisTreffer or {}; table.insert(D2.bisTreffer, t.sek); while #D2.bisTreffer > 30 do table.remove(D2.bisTreffer, 1) end end
   end
   if t and not S.treffer then
     S.treffer = t
     if PlaySound then pcall(PlaySound, 8959) end
     if FlashClientIcon then pcall(FlashClientIcon) end
+    -- 2.64: Kauf sofort vorbereiten (Preis holen), damit [Taste] nur noch bestaetigt – Stapelware, keine Einzel-Auktion
+    if not t.einzel and not GF.kaufLauf then
+      GF.unterbieterMerk = GF.unterbieterMerk or {}
+      GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true }
+      local ok = GF.kaufStarten(t.id, t.n, t.max)
+      t.vorbereitet = ok and true or false
+    end
   end
   GF.sniperZeigen()
+  -- 2.64: sofort weiter (nicht auf den naechsten Takt warten)
+  if not S.treffer and GF.sniperSchritt and C_Timer then C_Timer.After(0.05, GF.sniperSchritt) end
   return true
 end
 function GF.sniperBereit()
@@ -3750,15 +3834,20 @@ function GF.sniperBereit()
   if S.an and not S.laeuft then S.laeuft = true; snTick() end
   GF.sniperZeigen()
 end
-function GF.sniperUmschalten(an)
+function GF.sniperUmschalten(an, modus)
   local S = GF.sniper
   snBauen()
+  S.modus = S.modus or snDB().modus or "alle"
+  if modus then
+    if S.an and S.modus == modus and an == nil then an = false else an = true end
+    S.modus = modus; snDB().modus = modus
+  end
   if an == nil then an = not S.an end
   S.an = an and true or false
   if S.an then
     GF.sniperListe(true)
     if not S.laeuft then S.laeuft = true; snTick() end
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an – durchsucht " .. ((C_AuctionHouse and C_AuctionHouse.SendBrowseQuery) and ("das ganze AH (Handwerkswaren, Verbrauchbares, Reagenzien, Verschiedenes) + Merkliste " .. #S.liste) or (#S.liste .. " Items reihum")) ..
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an (" .. (S.modus == "sicher" and (GRUEN .. "Sicher – nur grüne Treffer, 1 Tastendruck" .. ENDE) or (BLAU .. "Alle – blau/orange mit 2 Tastendrücken" .. ENDE)) .. ") – durchsucht " .. ((C_AuctionHouse and C_AuctionHouse.SendBrowseQuery) and ("das ganze AH (Handwerkswaren, Verbrauchbares, Reagenzien, Verschiedenes) + Merkliste " .. #S.liste) or (#S.liste .. " Items reihum")) ..
       ". Treffer: Ton + Knopf oben am AH, Taste " .. snDB().taste .. " (1× starten, 1× bestätigen).")
   else
     S.treffer = nil; S.suche = nil
@@ -3772,6 +3861,10 @@ function GF.sniperWarum()
   local function sortiert(t) local a = {} for k, v in pairs(t or {}) do a[#a + 1] = { k, v } end table.sort(a, function(x, y) return x[2] > y[2] end) return a end
   local function nm(id) return (((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id)) end
   print(GOLD .. "Gold Forever Sniper – Warum nicht? (heute)" .. ENDE .. " Kandidaten " .. D2.kand .. " · Treffer " .. D2.treffer)
+  -- 2.64: Tempo
+  local function schnitt(l) if not l or #l == 0 then return nil end local x = 0; for _, v in ipairs(l) do x = x + v end; return math.floor(x / #l + 0.5) end
+  local dd, bt = schnitt(D2.dauer), schnitt(D2.bisTreffer)
+  if dd or bt then print(GRAU .. "  Tempo: Ø Durchgang " .. (dd and (dd .. " Sek.") or "—") .. " · Ø vom Fund bis zum Treffer " .. (bt and (bt .. " Sek.") or "—") .. ENDE) end
   local g = sortiert(D2.g)
   if #g == 0 then print(GRAU .. "  Noch keine abgelehnten Kandidaten." .. ENDE) end
   for k = 1, math.min(8, #g) do print("  " .. g[k][2] .. "× " .. g[k][1]) end

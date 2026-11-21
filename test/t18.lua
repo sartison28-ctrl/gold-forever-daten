@@ -21,3 +21,14 @@ zeige("Gebote: " .. table.concat(BIDS, ", ") .. " Treffer offen: " .. tostring(G
 -- kein Budget mehr
 local P = GF.budgetPlan(); zeige("Plan-Budget = Gold: " .. tostring(P.budget == GetMoney()))
 local D2 = GF.sniperDiag(); local f = D2.faelle[#D2.faelle]; zeige("Grund: " .. tostring(f and f.g) .. " p " .. tostring(f and f.p) .. " gew " .. tostring(f and f.gewinn))
+-- 2.62.2 Befund 64
+local tt = { id = 5631, n = 5, max = 40, neu = 69, gewinn = 100, R = 60, t = JETZT }
+GF.sniper.ausstehend = { t = tt, kk = { n = 5, unit = 40, total = 200 }, name = "Wuttrank", zeit = time() }
+GF.sniperKaufErgebnis(false)
+local lg = GoldForeverDB.sniper.log[#GoldForeverDB.sniper.log]
+zeige("Fehlkauf: log=" .. lg.aus .. " zuletzt=" .. tostring(GF.sniper.zuletzt and GF.sniper.zuletzt.id) .. " zuspaet=" .. tostring(GF.sniper.zuspaet and GF.sniper.zuspaet.name))
+local tt2 = { id = 5631, n = 5, max = 40, neu = 69, gewinn = 100, R = 60, t = JETZT }
+GF.sniper.zuletzt = nil
+GF.sniper.ausstehend = { t = tt2, kk = { n = 5, unit = 40, total = 200 }, name = "Wuttrank", zeit = time() }
+GF.sniperKaufErgebnis(true)
+zeige("Kauf ok: log=" .. GoldForeverDB.sniper.log[#GoldForeverDB.sniper.log].aus .. " zuletzt=" .. tostring(GF.sniper.zuletzt and GF.sniper.zuletzt.n))

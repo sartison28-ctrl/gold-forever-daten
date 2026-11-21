@@ -844,6 +844,10 @@ end
 -- niedrigere Wert – ausser der Markt steigt gerade stark (3-Tage-Trend >= +30 %), dann sind alte Verkaufspreise veraltet.
 function GF.verkaufsRef(id, R)
   local rl = GF.realm(id)
+  -- 2.62.2 (Analyse 21.11., Schriftrolle der Durchdringung: Präzision 5× zu 15s 60c, verkauft wird zu 3s 43c, −79 %):
+  -- „Trend +186 %“ war ein Preis-Reset, kein echter Anstieg. Liegt der echte Verkaufspreis unter der Hälfte von
+  -- „üblich“, gilt er immer – auch bei steigendem Trend.
+  if R and rl and rl.vp and rl.vp > 0 and rl.vp < R * 0.5 then return rl.vp, true end
   if R and rl and rl.vp and rl.vp > 0 and rl.vp < R and (rl.tr3 or 0) < 30 then return rl.vp, true end
   return R, false
 end
@@ -3264,7 +3268,10 @@ function GF.sniperBewerten(id)
   local tage = umsatz > 0 and n / umsatz or 99
   local risikoGrund
   local einzel = GoldForeverDB.einzelItem and GoldForeverDB.einzelItem[id]
+  -- 2.62.2: schon vorhandene Menge (Tasche/Bank/AH) mitdenken – Analyse 21.11.: oft übersprungen, weil schon genug da
+  local schon = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
   if erf and erf.vorsicht then risikoGrund = "schlechte Erfahrung"
+  elseif schon > 0 and umsatz > 0 and (schon + n) / umsatz > 0.5 then risikoGrund = "du hast schon " .. schon
   elseif umsatz < 100 then risikoGrund = "wenig Umsatz (" .. math.floor(umsatz + 0.5) .. "/Tag)"
   elseif i.nurRealm then risikoGrund = "wenig Daten (nur Realm)"
   elseif einzel then risikoGrund = "Einzelware – Preis schwankt"
@@ -3272,7 +3279,7 @@ function GF.sniperBewerten(id)
   elseif tage > 0.5 then risikoGrund = "Menge > ½ Tag Umsatz"
   elseif Rv < R * 0.85 then risikoGrund = "verkauft meist unter üblich" end
   local risiko = risikoGrund and "risiko" or (((erf and erf.bewaehrt) or (umsatz >= 200 and tage <= 0.25)) and "sicher" or "ok")
-  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel,
+  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel, schon = schon,
     abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
 end
 
@@ -3323,7 +3330,7 @@ function GF.sniperZeigen()
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
     snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
-      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. " · Rechtsklick: überspringen" .. ENDE)
+      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. ((t.schon or 0) > 0 and not (t.risikoGrund or ""):find("schon") and (" · du hast " .. t.schon) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
   else
     snF.knopf:Hide(); snBindung(false)
@@ -3333,6 +3340,8 @@ function GF.sniperZeigen()
     if S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
     elseif S.browseLaeuft then was = "durchsucht das AH … " .. (S.browseN or 0) .. " Items"
     else was = "Durchgang " .. (S.zyklus or 0) .. " · " .. (S.browseN or 0) .. " Items gesehen" end
+    if S.zuspaet and time() - S.zuspaet.t < 20 then was = ORANGE .. "Zu spät: " .. S.zuspaet.name .. " war schon weg" .. ENDE .. GRAU .. " · " .. was end
+    if S.ausstehend and time() - S.ausstehend.zeit < 15 then was = GOLD .. "Kauf läuft: " .. S.ausstehend.name .. " …" .. ENDE .. GRAU .. " · " .. was end
     local zl = S.zuletzt
     -- 2.61.1: erledigt, sobald die Ware im AH liegt (auch per TSM eingestellt)
     if zl and GF.imAH and (GF.imAH(zl.id) or 0) > (zl.ahVorher or 0) then S.zuletzt = nil; zl = nil end
@@ -3383,12 +3392,9 @@ local function snKlick(self, knopf)
     local ok, err, kk = GF.kaufBestaetigen()
     local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
     if ok then
-      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) ..
-        ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
-      local d = snDB(); local tag = date("%Y-%m-%d"); d.treffer[tag] = (d.treffer[tag] or 0) + 1
-      t.bezahlt = kk.unit; snLog(t, "gekauft")
-      S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0 } -- 2.61: Erinnerung "gleich wieder einstellen"
-      d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
+      -- 2.62.2 (Befund 64): erst als „gekauft“ zaehlen, wenn WoW den Kauf bestaetigt (COMMODITY_PURCHASE_SUCCEEDED);
+      -- schlaegt er fehl (schon weg), zaehlt er als „zu spät“
+      S.ausstehend = { t = t, kk = kk, name = name, zeit = time() }
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
   elseif not k then
@@ -3396,6 +3402,28 @@ local function snKlick(self, knopf)
     GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
     local ok, err = GF.kaufStarten(t.id, t.n, t.max)
     if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil end
+  end
+  GF.sniperZeigen()
+end
+function GF.sniperKaufErgebnis(ok)
+  local S = GF.sniper
+  local a = S and S.ausstehend
+  if not a or time() - a.zeit > 15 then return end
+  S.ausstehend = nil
+  local t, kk, name = a.t, a.kk, a.name
+  local d = snDB(); local tag = date("%Y-%m-%d")
+  if ok then
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) ..
+      ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
+    d.treffer[tag] = (d.treffer[tag] or 0) + 1
+    t.bezahlt = kk.unit; snLog(t, "gekauft")
+    S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0 }
+    d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
+  else
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " zu spät – " .. name .. " war schon weg." .. ENDE)
+    snLog(t, "zu spät")
+    local D2 = GF.sniperDiag(); D2.g["zu spät – schon weg"] = (D2.g["zu spät – schon weg"] or 0) + 1
+    S.zuspaet = { name = name, t = time() }
   end
   GF.sniperZeigen()
 end
@@ -3494,8 +3522,10 @@ function GF.sniperBrowse()
       elseif eingebr then grund = "Markt eingebrochen"
       elseif not GF.handelbar(i) then grund = "nicht handelbar"
       elseif GF.sniperFaellt(id, i.u) then grund = "Preis fällt stark"
-      elseif r.minPrice > R * GF.sniperGrenze(id, i, R) then grund = "zu teuer"
-      elseif R * 0.95 - r.minPrice < 30 then grund = "Gewinn je Stück < 30c" end
+      -- 2.62.2 (Analyse 21.11.: 795× „nicht günstig genug“ in der Detail-Suche): mit demselben echten
+      -- Verkaufspreis vorsortieren wie die Detail-Bewertung -> weniger nutzlose Detail-Suchen, schnellere Durchgänge
+      elseif r.minPrice > GF.verkaufsRef(id, R) * GF.sniperGrenze(id, i, R) then grund = "zu teuer"
+      elseif GF.verkaufsRef(id, R) * 0.95 - r.minPrice < 30 then grund = "Gewinn je Stück < 30c" end
       if not grund then
         table.insert(S.queue, 1, id); drin[id] = true
         S.kandidaten = (S.kandidaten or 0) + 1
@@ -3790,10 +3820,11 @@ f:SetScript("OnEvent", function(_, ev, ...)
     return
   end
   if ev == "COMMODITY_PURCHASE_SUCCEEDED" or ev == "AUCTION_HOUSE_PURCHASE_COMPLETED" then
+    if ev == "COMMODITY_PURCHASE_SUCCEEDED" then pcall(GF.sniperKaufErgebnis, true) end
     if C_Timer then C_Timer.After(0.5, function() pcall(kaufAbschliessen) end) else pcall(kaufAbschliessen) end
     return
   end
-  if ev == "COMMODITY_PURCHASE_FAILED" then offen = nil; return end
+  if ev == "COMMODITY_PURCHASE_FAILED" then offen = nil; pcall(GF.sniperKaufErgebnis, false); return end
   if ev == "MAIL_INBOX_UPDATE" then pcall(postLesen); return end
   if ev == "COMMODITY_PRICE_UPDATED" then pcall(GF.kaufPreisDa, ...); return end
   if ev == "OWNED_AUCTIONS_UPDATED" then pcall(eigeneAuktionen); return end

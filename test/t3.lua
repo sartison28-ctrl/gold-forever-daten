@@ -153,7 +153,7 @@ GF.zeigeAnsicht("bilanz")
 local b = GoldForeverFenster.ansichten.bilanz
 local function ohne(x) return (x or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "¤") end
 zeige("Gold-Diagramm: " .. ohne(b.diaGold.wert:GetText()) .. " | Vermögen: " .. ohne(b.diaVerm.wert:GetText()) .. " | " .. ohne(b.jeReiter:GetText()))
-for _, z in ipairs(b.tabGold.zeilen) do if z:IsShown() then zeige("  G: " .. ohne(z.l:GetText()) .. " = " .. ohne(z.c[1]:GetText()) .. " / " .. ohne(z.c[2]:GetText()) .. " / " .. ohne(z.c[3]:GetText())) end end
+for _, z in ipairs(b.tabGold.zeilen) do if z:IsShown() then zeige("  G: " .. ohne(z.l:GetText()) .. " = " .. ohne(z.c[1]:GetText())) end end
 for _, z in ipairs(b.tabVerm.zeilen) do if z:IsShown() then zeige("  V: " .. ohne(z.l:GetText()) .. " = " .. ohne(z.c[1]:GetText()) .. " " .. ohne(z.c[2]:GetText())) end end
 for _, z in ipairs(b.zeilen) do if z:IsShown() then zeige("  Zeile: " .. ohne(z.name:GetText()) .. " | " .. ohne(z.mitte:GetText()) .. " | " .. ohne(z.betrag:GetText())) end end
 b.tabGold.zeilen[1]._scripts.OnClick(b.tabGold.zeilen[1])

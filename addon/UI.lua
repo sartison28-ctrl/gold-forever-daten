@@ -113,6 +113,8 @@ local function betragKurz(c)
   if a >= 10000 then return betrag(math.floor(a / 100) * 100) end
   return betrag(a)
 end
+-- 2.63.1: ganz kurz fuer enge Spalten – ab 1g nur volle Gold
+local function goldRund(c) local a = math.floor(math.abs(c or 0) + 0.5); if a >= 10000 then return math.floor(a / 10000 + 0.5) .. MZ.g end; return betragKurz(a) end
 local function plusMinusKurz(c)
   if c >= 0 then return H.gruen .. "+" .. betragKurz(c) .. ENDE end
   return H.rot .. "-" .. betragKurz(c) .. ENDE
@@ -1545,7 +1547,7 @@ local function diagrammZeichnen(c, pts, reihen, tipZeilen)
   local W = INNEN
   local function X(t) return (t - t0) / (t1 - t0) * W end
   local function Y(w) return 2 + (w - lo) / (hi - lo) * (DIA_H - 4) end
-  f.ymax:SetText(betragKurz(math.floor(hi))); f.ymin:SetText(betragKurz(math.floor(lo)))
+  f.ymax:SetText(""); f.ymin:SetText("") -- 2.63.1: keine Achsen-Zahlen in der Fläche (überlappten die Linie) – Werte per Maus
   local function ts(t) return (t1 - t0 > 36 * 3600) and date("%d.%m.", t) or date("%H:%M", t) end
   c.xa:SetText(ts(t0)); c.xb:SetText(ts(t1)); c.xm:SetText(ts(math.floor((t0 + t1) / 2)))
   local fi = 0
@@ -1725,48 +1727,50 @@ function ANSICHTEN.bilanz(v)
   local goldJetzt, goldJe = GF.goldAlle()
   local andereW, andereJe = GF.wareAndere()
   local vermJetzt = goldJetzt + halten + eigen + ahW + andereW
-  local function diffText(a, b2) if not a then return "" end local d = b2 - a; return (d >= 0 and H.gruen .. "+" or H.rot .. "-") .. betrag(math.abs(d)) .. ENDE .. H.grau .. " im Zeitraum" .. ENDE end
-  v.diaGold.wert:SetText(H.gruen .. betrag(goldJetzt) .. ENDE)
+  local function diffText(a, b2) if not a then return "" end return plusMinusKurz(b2 - a) end
+  v.diaGold.wert:SetText(H.gruen .. betragKurz(goldJetzt) .. ENDE)
   v.diaGold.diff:SetText(pts[1] and diffText(gW[1], goldJetzt) or "")
   diagrammZeichnen(v.diaGold, pts, { { werte = gW, farbe = F.gruen, fuell = true } }, function(q)
     return { { "Gold (alle Charaktere)", betrag(q.g or 0) } }
   end)
-  v.diaVerm.wert:SetText(H.blau .. betrag(vermJetzt) .. ENDE)
+  v.diaVerm.wert:SetText(H.blau .. betragKurz(vermJetzt) .. ENDE)
   v.diaVerm.diff:SetText(pts[1] and diffText(vW[1], vermJetzt) or "")
   diagrammZeichnen(v.diaVerm, pts, { { werte = vW, farbe = F.blau, fuell = true }, { werte = gW, farbe = F.gruen, alpha = 0.45, dick = 1 } }, function(q)
     return { { "Vermögen", betrag((q.g or 0) + (q.w or 0)) }, { "Gold", betrag(q.g or 0) }, { q.geschaetzt and "Ware (zum Einkaufspreis)" or "Ware", betrag(q.w or 0) } }
   end)
-  -- Tabelle 1: Gold – woher (wie TSM: Heute / 7 Tage / Gesamt), alle Charaktere
-  local h1, h7, hA = GF.geldHerkunftAlle(sekundenFuer("heute")), GF.geldHerkunftAlle(7 * 86400), GF.geldHerkunftAlle(nil)
-  local function pm(w) if (w or 0) == 0 then return H.grau .. "—" .. ENDE end return plusMinus(w) end
+  -- Tabelle 1: Gold – woher, nur fuer den gewaehlten Zeitraum (2.63.1, Wunsch Alex: weniger Zahlen, keine Ueberlappung)
+  local hz = GF.geldHerkunftAlle(sek)
   local function sum(t) local x = 0; for _, w in pairs(t) do x = x + w end; return x end
-  local rG = GF.bilanz(sekundenFuer("heute")); local r7 = GF.bilanz(7 * 86400); local rA = GF.bilanz(nil)
-  local rowsG = {
-    { l = "AH-Verkäufe", c = { pm(h1.ah), pm(h7.ah), pm(hA.ah) }, tipp = "Gold aus verkauften Auktionen (aus dem Briefkasten genommen).", klick = function() GF.bilanzFilter = { art = "alleVerk", titel = "Verkauft" }; GF.aktualisieren() end },
-    { l = "AH-Einkäufe", c = { pm(h1.ahkauf), pm(h7.ahkauf), pm(hA.ahkauf) }, tipp = "Alle Käufe im Auktionshaus.", klick = function() GF.bilanzFilter = { art = "alleKauf", titel = "Gekauft" }; GF.aktualisieren() end },
-    { l = "Händler", c = { pm(h1.haendler + h1.haendlerkauf), pm(h7.haendler + h7.haendlerkauf), pm(hA.haendler + hA.haendlerkauf) }, tipp = "Verkäufe an Händler minus Einkäufe bei Händlern." },
-    { l = "Quests", c = { pm(h1.quest), pm(h7.quest), pm(hA.quest) } },
-    { l = "Loot", c = { pm(h1.loot), pm(h7.loot), pm(hA.loot) } },
-    { l = "Post & Sonstiges", c = { pm(h1.sonst), pm(h7.sonst), pm(hA.sonst) }, tipp = "Gold per Post (auch zwischen deinen Charakteren), Reparaturen, Porto, Einstellgebühren, Reisen …" },
-    { l = "Gold-Veränderung", c = { pm(sum(h1)), pm(sum(h7)), pm(sum(hA)) }, summe = true, tipp = "Summe aller Zu- und Abgänge = so viel mehr (oder weniger) Gold hast du." },
-    { l = "davon Gewinn aus GF-Käufen", c = { pm(rG.ergebnis), pm(r7.ergebnis), pm(rA.ergebnis) }, tipp = "Realisierter Gewinn aus Käufen nach Gold-Forever-Vorschlag bzw. Sniper (Verkauf nach Gebühr minus Einkauf).", klick = function() GF.bilanzFilter = { art = "gf", titel = "durch Gold Forever" }; GF.aktualisieren() end },
-  }
-  local hTab1 = tabelleFuellen(v.tabGold, H.gold .. "Gold – woher es kommt" .. ENDE, { "Heute", "7 Tage", "Gesamt" }, rowsG)
+  -- realisierter Gewinn aus GF-Kaeufen (verkaufte Menge: Erloes nach Gebuehr minus Einkauf)
+  local gfGewinn = 0
+  for _, e2 in ipairs(GF.topFlops(sek)) do if e2.gf and not e2.eigen then gfGewinn = gfGewinn + (e2.profit or 0) end end
+  local rowsG = {}
+  local function zeileG(l, w, tipp, klick) if (w or 0) ~= 0 then rowsG[#rowsG + 1] = { l = l, c = { plusMinusKurz(w) }, tipp = tipp, klick = klick } end end
+  zeileG("AH-Verkäufe", hz.ah, "Gold aus verkauften Auktionen (aus dem Briefkasten genommen).", function() GF.bilanzFilter = { art = "alleVerk", titel = "Verkauft" }; GF.aktualisieren() end)
+  zeileG("AH-Einkäufe", hz.ahkauf, "Alle Käufe im Auktionshaus.", function() GF.bilanzFilter = { art = "alleKauf", titel = "Gekauft" }; GF.aktualisieren() end)
+  zeileG("Händler", hz.haendler + hz.haendlerkauf, "Verkäufe an Händler minus Einkäufe bei Händlern.")
+  zeileG("Quests", hz.quest)
+  zeileG("Loot", hz.loot)
+  zeileG("Post & Sonstiges", hz.sonst, "Gold per Post (auch zwischen deinen Charakteren), Reparaturen, Porto, Einstellgebühren …")
+  rowsG[#rowsG + 1] = { l = "Gold-Veränderung", c = { plusMinusKurz(sum(hz)) }, summe = true, tipp = "Summe aller Zu- und Abgänge im Zeitraum." }
+  rowsG[#rowsG + 1] = { l = "Gewinn aus GF-Käufen", c = { plusMinusKurz(gfGewinn) }, tipp = "Realisiert: verkaufte Ware aus Käufen nach Gold-Forever-Vorschlag bzw. Sniper – Erlös nach Gebühr minus Einkauf. Noch nicht verkaufte Ware zählt nicht.", klick = function() GF.bilanzFilter = { art = "top", titel = "Top-Verkäufe & Verluste" }; GF.aktualisieren() end }
+  local zname = ({ heute = "Heute", ["7"] = "7 Tage", ["30"] = "30 Tage", alle = "Gesamt" })[wahl] or ""
+  local hTab1 = tabelleFuellen(v.tabGold, H.gold .. "Gold – woher es kommt" .. ENDE, { zname }, rowsG)
   -- Tabelle 2: Vermoegen – woraus es besteht
   local ich = GF.charKey()
   local function anteil(w) return vermJetzt > 0 and (H.grau .. math.floor(w / vermJetzt * 100 + 0.5) .. " %" .. ENDE) or "" end
   local rowsV = {}
   local chars = {}; for c in pairs(goldJe) do chars[#chars + 1] = c end
   table.sort(chars, function(a2, b2) if a2 == ich then return true elseif b2 == ich then return false end return a2 < b2 end)
-  for _, c in ipairs(chars) do rowsV[#rowsV + 1] = { l = "Gold – " .. c, c = { H.gruen .. betrag(goldJe[c]) .. ENDE, anteil(goldJe[c]) } } end
-  rowsV[#rowsV + 1] = { l = "Gekaufte Ware – Tasche, Bank, Post", c = { H.hell .. betrag(halten) .. ENDE, anteil(halten) }, tipp = "Ware, die du nach Vorschlag gekauft hast und noch nicht im AH liegt – zum aktuellen Marktwert.", klick = function() GF.bilanzFilter = { art = "bestand", titel = "Gekaufte Ware" }; GF.aktualisieren() end }
-  rowsV[#rowsV + 1] = { l = "Eigene Ware (Farm/Loot)", c = { H.hell .. betrag(eigen) .. ENDE, anteil(eigen) }, tipp = "Ware aus Farm/Loot, die Gold Forever verkaufen würde (Verkaufswert)." }
-  rowsV[#rowsV + 1] = { l = "Im Auktionshaus", c = { H.hell .. betrag(ahW) .. ENDE, anteil(ahW) }, tipp = "Alle deine laufenden Auktionen – Erlös nach 5 % Gebühr, wenn alles verkauft wird." }
-  for c, w in pairs(andereJe) do rowsV[#rowsV + 1] = { l = "Ware – " .. c, c = { H.hell .. betrag(w) .. ENDE, anteil(w) }, tipp = "Ware beim Charakter " .. c .. " (Halten + Auktionen), Stand seines letzten Logins." } end
-  rowsV[#rowsV + 1] = { l = "Vermögen", c = { H.blau .. betrag(vermJetzt) .. ENDE, "" }, summe = true }
+  for _, c in ipairs(chars) do rowsV[#rowsV + 1] = { l = "Gold – " .. c, c = { H.gruen .. betragKurz(goldJe[c]) .. ENDE, anteil(goldJe[c]) } } end
+  rowsV[#rowsV + 1] = { l = "Gekaufte Ware – Tasche, Bank, Post", c = { H.hell .. betragKurz(halten) .. ENDE, anteil(halten) }, tipp = "Ware, die du nach Vorschlag gekauft hast und noch nicht im AH liegt – zum aktuellen Marktwert.", klick = function() GF.bilanzFilter = { art = "bestand", titel = "Gekaufte Ware" }; GF.aktualisieren() end }
+  if eigen > 0 then rowsV[#rowsV + 1] = { l = "Eigene Ware (Farm/Loot)", c = { H.hell .. betragKurz(eigen) .. ENDE, anteil(eigen) }, tipp = "Ware aus Farm/Loot, die Gold Forever verkaufen würde (Verkaufswert)." } end
+  rowsV[#rowsV + 1] = { l = "Im Auktionshaus", c = { H.hell .. betragKurz(ahW) .. ENDE, anteil(ahW) }, tipp = "Alle deine laufenden Auktionen – Erlös nach 5 % Gebühr, wenn alles verkauft wird." }
+  for c, w in pairs(andereJe) do rowsV[#rowsV + 1] = { l = "Ware – " .. c, c = { H.hell .. betragKurz(w) .. ENDE, anteil(w) }, tipp = "Ware beim Charakter " .. c .. " (Halten + Auktionen), Stand seines letzten Logins." } end
+  rowsV[#rowsV + 1] = { l = "Vermögen", c = { H.blau .. betragKurz(vermJetzt) .. ENDE, "" }, summe = true }
   local vv = GF.vermoegenVerlauf(time() - 86400)
   local v7 = GF.vermoegenVerlauf(time() - 7 * 86400)
-  local function gegen(liste) local q = liste[1]; if not q then return H.grau .. "—" .. ENDE end return plusMinus(vermJetzt - ((q.g or 0) + (q.w or 0))) end
+  local function gegen(liste) local q = liste[1]; if not q then return H.grau .. "—" .. ENDE end return plusMinusKurz(vermJetzt - ((q.g or 0) + (q.w or 0))) end
   rowsV[#rowsV + 1] = { l = "gegenüber vor 24 Std.", c = { gegen(vv), "" } }
   rowsV[#rowsV + 1] = { l = "gegenüber vor 7 Tagen", c = { gegen(v7), "" } }
   local hTab2 = tabelleFuellen(v.tabVerm, H.gold .. "Vermögen – woraus es besteht" .. ENDE, { "Wert", "Anteil" }, rowsV)
@@ -1844,8 +1848,8 @@ function ANSICHTEN.bilanz(v)
       for _, e in ipairs(tage) do
         local T = e.T
         local hkT = (GoldForeverDB.geld and GoldForeverDB.geld[GF.charKey()] or {})[e.tag] or {}
-        zeilen[#zeilen + 1] = { tag = true, name = GF.WT[tonumber(date("%w", T.t)) + 1] .. " " .. date("%d.%m.", T.t), betrag = plusMinus(T.ein - T.aus),
-          mitte = H.gruen .. "+" .. betragKurz(T.ein) .. ENDE .. H.grau .. " / " .. ENDE .. H.rot .. "-" .. betragKurz(T.aus) .. ENDE,
+        zeilen[#zeilen + 1] = { tag = true, name = GF.WT[tonumber(date("%w", T.t)) + 1] .. " " .. date("%d.%m.", T.t), betrag = plusMinusKurz(T.ein - T.aus),
+          mitte = H.gruen .. "+" .. goldRund(T.ein) .. ENDE .. H.grau .. " / " .. ENDE .. H.rot .. "-" .. goldRund(T.aus) .. ENDE,
           details = { { "Verkauft", GF.geld(T.ein) .. " (" .. T.nV .. ")" }, { "Gekauft", GF.geld(T.aus) .. " (" .. T.nK .. ")" }, { "Saldo", GF.geld(T.ein - T.aus) },
             { "Gold aus Loot", GF.geld(hkT.loot or 0) }, { "Gold aus Quests", GF.geld(hkT.quest or 0) }, { "Händler", GF.geld((hkT.haendler or 0) + (hkT.haendlerkauf or 0)) } } }
       end
@@ -2203,8 +2207,8 @@ local function baueAnsichten(kind)
   end
   -- 2.63 (Wunsch Alex 21.11.): zwei Linien-Diagramme + zwei Tabellen statt Kacheln und Balken
   b.diaGold = diagramm(b, "Gold"); b.diaGold:SetPoint("TOPLEFT", 0, -30)
-  b.diaVerm = diagramm(b, "Vermögen  " .. H.grau .. "(Gold + Ware)" .. ENDE); b.diaVerm:SetPoint("TOPLEFT", 0, -(30 + 122 + 12))
-  b.tabGold = tabelle(b, { 270, 353, 436 }, 10)
+  b.diaVerm = diagramm(b, "Vermögen"); b.diaVerm:SetPoint("TOPLEFT", 0, -(30 + 122 + 12))
+  b.tabGold = tabelle(b, { 436 }, 10)
   b.tabVerm = tabelle(b, { 353, 436 }, 12)
   b.jeReiter = text(b, 10); b.jeReiter:SetWidth(INNEN - 96); b.jeReiter:SetWordWrap(false)
   -- 2.55 (Befund 46): Top-Verkäufe & Verluste je Item

@@ -1375,6 +1375,27 @@ function GF.ahDaten()
   if not GoldForeverDB.imAHc[k] then GoldForeverDB.imAHc[k] = { t = 0, items = {} } end
   return GoldForeverDB.imAHc[k]
 end
+-- 2.72 (Befund Alex 21.11. 23:29: „30× Unverwüstliches Leder einstellen“, in der Tasche 4 – 26 schon verkauft):
+-- Gold unterwegs = verkaufte Auktionen, deren Gold noch nicht abgeholt ist (Stand der letzten AH-Liste; was seitdem
+-- aus der Post abgeholt und gebucht wurde, zaehlt nicht mehr). Liefert Summe (nach Gebuehr) und Stueck je Item.
+function GF.goldUnterwegs()
+  local A = GF.ahDaten()
+  local je, summe = {}, 0
+  if not (A and A.verkauft) then return 0, je end
+  local abgeholt = {}
+  for _, x in ipairs((GoldForeverDB.bilanz and GoldForeverDB.bilanz.buch) or {}) do
+    if x.art == "verk" and (x.t or 0) >= (A.t or 0) and x.id then abgeholt[x.id] = (abgeholt[x.id] or 0) + (x.n or 0) end
+  end
+  for id, n in pairs(A.verkauft) do
+    local rest = n - (abgeholt[id] or 0)
+    if rest > 0 then
+      local vp = (A.vpreis or {})[id]
+      if not vp then local i = GF.info(id); vp = i and GF.wert and GF.wert(i) or 0 end
+      je[id] = rest; summe = summe + math.floor((vp or 0) * 0.95 * rest)
+    end
+  end
+  return summe, je
+end
 local function tagPruefen()
   GoldForeverDB.tag = GoldForeverDB.tag or {}
   local heute = date("%Y-%m-%d"); local t = GoldForeverDB.tag[charKey()]
@@ -1876,6 +1897,7 @@ function GF.positionen()
       end
     end
   end
+  local _, unterwegsJe = GF.goldUnterwegs() -- 2.72: einmal je Berechnung
   for _, p in pairs(pos) do
     local id = p.id
     if p.n > 0 and p.char ~= ich then
@@ -1905,7 +1927,7 @@ function GF.positionen()
         end
       end
       -- schon verkauft (Gold wartet im Briefkasten)?
-      local vk = (GF.ahDaten().verkauft or {})[id] or 0
+      local vk = unterwegsJe[id] or 0
       p.verkauftPost = math.min(p.post, vk)
       if p.n <= 0 then p.aus = true end
       p.verkauftPreis = p.verkauftPost > 0 and ((GF.ahDaten().vpreis or {})[id]) or nil
@@ -2669,10 +2691,11 @@ function GF.vermoegenMerken(wareIch, zwang)
   local g = GF.goldAlle()
   local w = (GF.wareIchLetzt or 0) + (GF.wareAndere())
   if not GF.wareIchLetzt and v[#v] then w = v[#v].w end
+  local u = GF.goldUnterwegs() -- 2.72: verkauft, Gold noch in der Post
   local l = v[#v]
   -- innerhalb von 5 Min.: letzten Punkt nachfuehren statt neuen anlegen
-  if l and not zwang and jetzt - l.t < 300 then l.g, l.w = g, w; return end
-  v[#v + 1] = { t = jetzt, g = g, w = w }
+  if l and not zwang and jetzt - l.t < 300 then l.g, l.w, l.u = g, w, u; return end
+  v[#v + 1] = { t = jetzt, g = g, w = w, u = u }
   -- aelter als 3 Tage: je Stunde ein Punkt; hoechstens 3000 Punkte
   if #v > 3000 or (#v % 50 == 0) then
     local neu, letzteStd = {}, nil

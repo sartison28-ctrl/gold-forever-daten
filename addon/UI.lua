@@ -911,7 +911,25 @@ local function standardDaten()
       local pl = GF.verkaufsPlan(p) or { art = "halt", kurz = "", lang = "" }
       local gewinn, best = GF.erwartGewinn(p, pl)
       local orte = GF.lagerorte(p.id, { post = (p.post or 0), ah = p.imAH or 0 })
-      local e = { id = p.id, n = p.n, gekauft = true, betrag = plusMinus(gewinn), wert = gewinn, orte = orte }
+      -- 2.72 (Befund Alex 23:29): Menge/Gewinn nur fuer das, was wirklich zu tun ist – beim Einstellen die Stueck in
+      -- Taschen/Bank, sonst ohne die schon verkauften (Gold unterwegs)
+      local vkP = p.verkauftPost or 0
+      local nZeig = p.n - vkP
+      if pl.art == "verk" and not pl.abbrechen and (p.da or 0) > 0 then nZeig = p.da end
+      if nZeig > 0 and nZeig < p.n then
+        gewinn = math.floor(gewinn * nZeig / p.n); if best then best = math.floor(best * nZeig / p.n) end
+      else nZeig = p.n end
+      local e = { id = p.id, n = nZeig, gekauft = true, betrag = plusMinus(gewinn), wert = gewinn, orte = orte }
+      -- verkauft, Gold kommt per Post: eigene Zeile unter „Auktionshaus“ (nur wenn daneben noch Ware da ist)
+      if vkP > 0 and vkP < p.n and not pl.verkauft then
+        local vpU = p.verkauftPreis or (p.i and GF.wert(p.i)) or p.ek or 0
+        local erl = math.floor(vpU * 0.95 * vkP)
+        local gw = math.floor(erl - (p.ek or 0) * vkP)
+        d.ahL[#d.ahL + 1] = { id = p.id, n = vkP, gekauft = true, wert = gw, betrag = plusMinus(gw), orte = { post = vkP },
+          zeile2 = mit(verb("gruen", "Verkauft"), grau("Gold kommt per Post · ca. " .. GF.geld(erl))),
+          hinweis = vkP .. " Stück sind verkauft. Das Gold (ca. " .. GF.geld(erl) .. " nach Gebühr) kommt rund 1 Std. nach dem Verkauf in den Briefkasten." }
+        d.ahWert = d.ahWert + erl; d.ahGewinn = d.ahGewinn + gw
+      end
       if best and best ~= gewinn then
         e.hinweis = "Erwarteter Gewinn mit realistischem Verkaufspreis (üblich bzw. Marktwert). Bestfall zu deinem Preis: " .. (best >= 0 and "+" or "-") .. GF.geld(math.abs(best)) .. "."
       end
@@ -983,7 +1001,7 @@ local function standardDaten()
           d.ahL[#d.ahL + 1] = e; d.ahWert = d.ahWert + math.floor((p.ahPreis or 0) * 0.95 * (p.imAH or 0)); d.ahGewinn = d.ahGewinn + gewinn
         else
           local li2 = p.i or GF.info(p.id)
-          e.aktWert = math.floor((GF.wert(li2) or 0) * p.n); d.haltWert = d.haltWert + e.aktWert
+          e.aktWert = math.floor((GF.wert(li2) or 0) * e.n); d.haltWert = d.haltWert + e.aktWert
           d.spaeter[#d.spaeter + 1] = e
         end
       end
@@ -1187,6 +1205,7 @@ local function standardDaten()
   return d
 end
 
+GF.standardDaten = function() return standardDaten() end -- 2.72: fuer Tests/Auswertung
 -- ---------------------------------------------------------------- Daten: Reiter „Raid & Events"
 local function eventsSortiert()
   local out = {}
@@ -1469,7 +1488,7 @@ function GF.wareIchTeile()
   local posN = {}
   for _, p in ipairs(GF.positionen()) do
     posN[p.id] = p.n
-    local n = p.n - (p.imAH or 0)
+    local n = p.n - (p.imAH or 0) - (p.verkauftPost or 0) -- 2.72: verkaufte (Gold unterwegs) nicht als Ware zaehlen
     if n > 0 then halten = halten + math.floor(((p.i and GF.wert(p.i)) or p.ek or 0) * n) end
   end
   for _, liste in ipairs({ GF.verkaufListe(), GF.warteListe() }) do
@@ -1729,10 +1748,11 @@ function ANSICHTEN.bilanz(v)
   pcall(GF.vermoegenMerken, halten + eigen + ahW)
   local pts = ausduennen(GF.vermoegenVerlauf(von))
   local gW, vW = {}, {}
-  for k, q in ipairs(pts) do gW[k] = q.g or 0; vW[k] = (q.g or 0) + (q.w or 0) end
+  for k, q in ipairs(pts) do gW[k] = q.g or 0; vW[k] = (q.g or 0) + (q.w or 0) + (q.u or 0) end
   local goldJetzt, goldJe = GF.goldAlle()
   local andereW, andereJe = GF.wareAndere()
-  local vermJetzt = goldJetzt + halten + eigen + ahW + andereW
+  local unterwegsJetzt = GF.goldUnterwegs()
+  local vermJetzt = goldJetzt + unterwegsJetzt + halten + eigen + ahW + andereW
   local function diffText(a, b2) if not a then return "" end return plusMinusKurz(b2 - a) end
   v.diaGold.wert:SetText(H.gruen .. betragKurz(goldJetzt) .. ENDE)
   v.diaGold.diff:SetText(pts[1] and diffText(gW[1], goldJetzt) or "")
@@ -1742,7 +1762,7 @@ function ANSICHTEN.bilanz(v)
   v.diaVerm.wert:SetText(H.blau .. betragKurz(vermJetzt) .. ENDE)
   v.diaVerm.diff:SetText(pts[1] and diffText(vW[1], vermJetzt) or "")
   diagrammZeichnen(v.diaVerm, pts, { { werte = vW, farbe = F.blau, fuell = true }, { werte = gW, farbe = F.gruen, alpha = 0.45, dick = 1 } }, function(q)
-    return { { "Vermögen", betrag((q.g or 0) + (q.w or 0)) }, { "Gold", betrag(q.g or 0) }, { q.geschaetzt and "Ware (zum Einkaufspreis)" or "Ware", betrag(q.w or 0) } }
+    return { { "Vermögen", betrag((q.g or 0) + (q.w or 0) + (q.u or 0)) }, { "Gold", betrag(q.g or 0) }, { "Gold unterwegs (Post)", betrag(q.u or 0) }, { q.geschaetzt and "Ware (zum Einkaufspreis)" or "Ware", betrag(q.w or 0) } }
   end)
   -- Tabelle 1: Gold – woher, nur fuer den gewaehlten Zeitraum (2.63.1, Wunsch Alex: weniger Zahlen, keine Ueberlappung)
   local hz = GF.geldHerkunftAlle(sek)
@@ -1776,7 +1796,7 @@ function ANSICHTEN.bilanz(v)
   rowsV[#rowsV + 1] = { l = "Vermögen", c = { H.blau .. betragKurz(vermJetzt) .. ENDE, "" }, summe = true }
   local vv = GF.vermoegenVerlauf(time() - 86400)
   local v7 = GF.vermoegenVerlauf(time() - 7 * 86400)
-  local function gegen(liste) local q = liste[1]; if not q then return H.grau .. "—" .. ENDE end return plusMinusKurz(vermJetzt - ((q.g or 0) + (q.w or 0))) end
+  local function gegen(liste) local q = liste[1]; if not q then return H.grau .. "—" .. ENDE end return plusMinusKurz(vermJetzt - ((q.g or 0) + (q.w or 0) + (q.u or 0))) end
   rowsV[#rowsV + 1] = { l = "gegenüber vor 24 Std.", c = { gegen(vv), "" } }
   rowsV[#rowsV + 1] = { l = "gegenüber vor 7 Tagen", c = { gegen(v7), "" } }
   local hTab2 = tabelleFuellen(v.tabVerm, H.gold .. "Vermögen – woraus es besteht" .. ENDE, { "Wert", "Anteil" }, rowsV) -- Spalte 1 (Wert) rechts wie in Tabelle 1, Anteil davor
@@ -2017,12 +2037,15 @@ function GF.aktualisieren()
   zahlen.standard, zahlen.raid, zahlen.zeit = #s.jetzt, r.jetzt, time()
   -- Kopf
   local ein, aus, prof = GF.handelHeute()
-  fenster.k.gold.wert:SetText(H.hell .. betragKurz(GetMoney()) .. ENDE)
+  -- 2.72: Gold unterwegs (verkauft, noch in der Post) klein dahinter
+  local unterwegs = GF.goldUnterwegs()
+  fenster.k.gold.wert:SetText(H.hell .. betragKurz(GetMoney()) .. ENDE .. (unterwegs > 0 and (H.grau .. " +" .. betragKurz(unterwegs) .. ENDE) or ""))
+  fenster.unterwegs = unterwegs
   -- 2.62.1: statt Kaufbudget der Wert deiner Ware (Halten + im AH, nach Gebühr) – Gold + Ware = Vermögen
   local wh, we, wa = GF.wareIchTeile()
   local ware = wh + we + wa
   fenster.k.budget.wert:SetText(H.lila .. betragKurz(ware) .. ENDE)
-  fenster.k.budget.tipp = "Wert deiner Ware: gekauft " .. GF.geld(wh) .. " + eigene " .. GF.geld(we) .. " + im AH " .. GF.geld(wa) .. " (nach Gebühr). Vermögen mit Gold: " .. GF.geld(ware + (GetMoney and GetMoney() or 0)) .. ". Klick: Bilanz."
+  fenster.k.budget.tipp = "Wert deiner Ware: gekauft " .. GF.geld(wh) .. " + eigene " .. GF.geld(we) .. " + im AH " .. GF.geld(wa) .. " (nach Gebühr). Gold unterwegs (verkauft, noch in der Post): " .. GF.geld(unterwegs) .. ". Vermögen = Gold + unterwegs + Ware: " .. GF.geld(ware + unterwegs + (GetMoney and GetMoney() or 0)) .. ". Klick: Bilanz."
   fenster.k.ein.wert:SetText(ein > 0 and (H.gruen .. betragKurz(ein) .. ENDE) or (H.grau .. "—" .. ENDE))
   fenster.k.profit.wert:SetText((ein > 0 or aus > 0) and plusMinusKurz(prof) or (H.grau .. "—" .. ENDE))
   fenster.k.profit.tipp = "Einnahmen " .. GF.geld(ein) .. " minus Einkäufe " .. GF.geld(aus) .. " (heute). Gold seit Tagesbeginn: " .. GF.geld(GF.tagesbilanz() or 0) .. ". Klick: Bilanz."
@@ -2400,6 +2423,7 @@ local function baue()
   fenster.k.gold:SetScript("OnEnter", function(self)
     self.bg:SetColorTexture(1, 1, 1, 0.06)
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Gold heute – woher?")
+    if (fenster.unterwegs or 0) > 0 then GameTooltip:AddDoubleLine("Gold unterwegs (verkauft, in der Post)", "+" .. GF.geld(fenster.unterwegs), 0.29, 0.87, 0.5, 0.29, 0.87, 0.5) end
     local t = date("*t"); local h = GF.geldHerkunft(t.hour * 3600 + t.min * 60 + t.sec)
     local ZEILEN = { { "loot", "Loot" }, { "quest", "Quests" }, { "haendler", "Händler-Verkauf" }, { "ah", "AH-Verkäufe (Post)" },
       { "ahkauf", "AH-Käufe" }, { "haendlerkauf", "Händler-Kauf / Reparatur" }, { "sonst", "Sonstiges" } }

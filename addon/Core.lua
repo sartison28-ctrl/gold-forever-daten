@@ -3606,8 +3606,19 @@ function GF.sniperZeigen()
     snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
       GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. ((t.schon or 0) > 0 and not (t.risikoGrund or ""):find("schon") and (" · du hast " .. t.schon) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. (t.portionen and (" · in " .. t.portionen .. " Portionen einstellen") or "") .. (t.eigenVK and " · rechnet mit deinem Verkaufspreis" or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
+    -- 2.71: Kauffeld ueber dem ganzen AH nur im Fokus-Modus
+    if snF.feld then
+      local an = S.modus == "fokus"
+      snF.feld:SetShown(an)
+      if an then
+        local fb2 = snF.knopf.farbe or { 0.98, 0.75, 0.15 }
+        snF.feld.bg:SetColorTexture(fb2[1], fb2[2], fb2[3], 0.12)
+        snF.feld.t:SetText(((k and k.id == t.id and k.unit) and "BESTÄTIGEN  " or "KAUFEN  ") .. t.n .. "× " .. (name or "") .. "  ·  +" .. GF.geld(t.gewinn))
+      end
+    end
   else
     snF.knopf:Hide(); snBindung(false)
+    if snF.feld then snF.feld:Hide() end
     if snF.icon then snF.icon:Hide(); snF.name:Hide() end
     local n = #S.liste
     local was
@@ -3762,7 +3773,7 @@ end
 local function snBauen()
   if snF then return end
   snF = CreateFrame("Frame", "GoldForeverSniper", UIParent)
-  snF:SetSize(600, 66); snF:SetFrameStrata("HIGH")
+  snF:SetSize(600, 92); snF:SetFrameStrata("HIGH") -- 2.71: groesser (Knopf 56 statt 30 hoch)
   if AuctionHouseFrame then snF:SetPoint("BOTTOM", AuctionHouseFrame, "TOP", 0, 6) else snF:SetPoint("TOP", 0, -40) end
   snF.bg = snF:CreateTexture(nil, "BACKGROUND"); snF.bg:SetAllPoints(); snF.bg:SetColorTexture(0.06, 0.07, 0.1, 0.92)
   -- 2.64 (Wunsch Alex): zwei Sniper – „Sicher“ (nur grüne Treffer, 1 Tastendruck) und „Alle“ (grün/blau/orange; blau/orange 2 Tastendrücke)
@@ -3821,11 +3832,11 @@ local function snBauen()
   snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.pfeil, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
   local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
   -- 2.58.2: Item-Icon + Name links, Knopf rechts daneben
-  snF.icon = snF:CreateTexture(nil, "ARTWORK"); snF.icon:SetSize(30, 30); snF.icon:SetPoint("BOTTOMLEFT", 6, 5); snF.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); snF.icon:Hide()
+  snF.icon = snF:CreateTexture(nil, "ARTWORK"); snF.icon:SetSize(44, 44); snF.icon:SetPoint("BOTTOMLEFT", 6, 11); snF.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); snF.icon:Hide()
   snF.name = snF:CreateFontString(nil, "OVERLAY", "GameFontNormal"); snF.name:SetPoint("LEFT", snF.icon, "RIGHT", 6, 0); snF.name:SetWidth(150); snF.name:SetJustifyH("LEFT"); snF.name:Hide()
-  b:SetPoint("BOTTOMLEFT", 196, 5); b:SetPoint("BOTTOMRIGHT", -6, 5); b:SetHeight(30)
+  b:SetPoint("BOTTOMLEFT", 196, 5); b:SetPoint("BOTTOMRIGHT", -6, 5); b:SetHeight(56)
   b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(); b.bg:SetColorTexture(0.65, 0.45, 0.95, 0.55)
-  b.t = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight"); b.t:SetPoint("CENTER")
+  b.t = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge"); b.t:SetPoint("CENTER"); b.t:SetWidth(390); b.t:SetWordWrap(true)
   b:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonUp"); b:SetScript("OnClick", snKlick) -- 2.66: Druecken + Loslassen
   b:SetScript("OnEnter", function(self) local c = self.farbe or { 0.65, 0.45, 0.95 }; self.bg:SetColorTexture(c[1], c[2], c[3], 0.7) end)
   b:SetScript("OnLeave", function(self) local c = self.farbe or { 0.65, 0.45, 0.95 }; self.bg:SetColorTexture(c[1], c[2], c[3], 0.45) end)
@@ -3842,6 +3853,20 @@ local function snBauen()
   snF.warum:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Sniper – Warum nicht?"); GameTooltip:AddLine("Zeigt im Chat, warum gefundene Angebote heute keine Treffer wurden (häufigste Gründe + knappste Fälle).", 0.6, 0.6, 0.65, true); GameTooltip:Show() end)
   snF.warum:SetScript("OnLeave", function() GameTooltip:Hide() end)
   snF.info:SetPoint("RIGHT", snF.warum, "LEFT", -6, 0)
+  -- 2.71 (Wunsch Alex 21.11. 23:16: „schwer, beim Drehen auf dem kleinen Knopf zu bleiben“): im Fokus-Modus wird das
+  -- ganze AH-Fenster zum Kaufknopf, solange ein Treffer angezeigt wird (Mausrad/Linksklick = Druck, Rechtsklick = überspringen).
+  if AuctionHouseFrame then
+    local kf = CreateFrame("Button", "GoldForeverSniperFeld", AuctionHouseFrame)
+    kf:SetAllPoints(AuctionHouseFrame); kf:SetFrameStrata("DIALOG")
+    kf.bg = kf:CreateTexture(nil, "BACKGROUND"); kf.bg:SetAllPoints(); kf.bg:SetColorTexture(0.98, 0.75, 0.15, 0.12)
+    kf.t = kf:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge"); kf.t:SetPoint("CENTER", 0, 20)
+    kf.t2 = kf:CreateFontString(nil, "OVERLAY", "GameFontHighlight"); kf.t2:SetPoint("TOP", kf.t, "BOTTOM", 0, -8)
+    kf.t2:SetText("Mausrad oder Linksklick irgendwo hier = Kaufen  ·  Rechtsklick = überspringen")
+    kf:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonUp")
+    kf:SetScript("OnClick", function(_, knopf, down) snKlick(b, knopf, down) end)
+    kf:EnableMouseWheel(true); kf:SetScript("OnMouseWheel", function() if b:IsShown() then snKlick(b, "LeftButton") end end)
+    kf:Hide(); snF.feld = kf
+  end
   snF:Hide()
 end
 -- Reihum suchen. Pause, solange GF selbst prueft/kauft oder du im AH ein Item zum Kaufen offen hast.

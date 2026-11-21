@@ -2314,7 +2314,7 @@ function GF.kaufStarten(id, menge, maxPreis)
   menge = math.max(1, math.floor(menge or 1))
   local kosten = (GF.kaufPreis(id, menge) or maxPreis or 0) * menge
   if GetMoney and kosten > GetMoney() then return false, "nicht genug Gold" end
-  GF.kaufLauf = { id = id, n = menge, max = maxPreis, t = time() }
+  GF.kaufLauf = { id = id, n = menge, max = maxPreis, t = time(), gt0 = (GetTime and GetTime()) or time() }
   local ok, err = pcall(C_AuctionHouse.StartCommoditiesPurchase, id, menge)
   if not ok then GF.kaufLauf = nil; return false, err end
   return true
@@ -2323,6 +2323,7 @@ function GF.kaufPreisDa(unit, total)
   local k = GF.kaufLauf; if not k then return end
   k.unit, k.total, k.preisT = unit, total, time()
   k.preisGT = (GetTime and GetTime()) or time()
+  if k.gt0 and GF.sniperDiag then local D2 = GF.sniperDiag(); D2.tasten = D2.tasten or { runter = 0, los = 0, losOhnePreis = 0, ohneArt = 0 }; D2.tasten.preisMs = math.floor((k.preisGT - k.gt0) * 1000) end
   if k.max and unit and unit > k.max then
     pcall(C_AuctionHouse.CancelCommoditiesPurchase)
     GF.kaufLauf = nil
@@ -3394,6 +3395,13 @@ local SN_PREISGRUND = { ["nicht günstig genug"] = true, ["kein Gewinn (gleich b
 -- feste Gruende: aendern sich nicht in Minuten (30 Min. nicht mehr einzeln suchen)
 local SN_FESTGRUND = { ["nicht handelbar"] = true, ["Händlerware / keine Infos"] = true, ["Preis fällt stark"] = true, ["Markt eingebrochen"] = true,
   ["kein Referenzpreis"] = true, ["Umsatz < 50/Tag"] = true }
+function GF.istKiste(id)
+  GoldForeverDB.kisten = GoldForeverDB.kisten or {}
+  if GoldForeverDB.kisten[id] then return true end
+  local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(id))
+  if name and (name:find("Kiste:") or name:find("^Abgefangene Kiste")) then GoldForeverDB.kisten[id] = true; return true end
+  return false
+end
 function GF.sniperBewerten(id)
   id = tonumber(id)
   local l = GF.live[id]; if not (l and l.st and #l.st > 0 and not l.voll) then return snNein(id, "schon weg / kein Angebot") end
@@ -3440,6 +3448,13 @@ function GF.sniperBewerten(id)
   local billigsterP = l.st[1] and l.st[1].p or math.huge
   local knaller = billigsterP <= Rv * 0.5
   if budget < 100 then return snNein(id, "kein Gold") end
+  -- 2.66.1 (Wunsch Alex 21.11. 22:13): Kisten hoechstens 10 Stueck inkl. Bestand – Menge schon hier begrenzen
+  local kiste = GF.istKiste(id)
+  if kiste then
+    local schonK = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
+    cap = math.min(cap, 10 - schonK)
+    if cap < 1 then return snNein(id, "Kiste: du hast schon " .. schonK .. " (max. 10)") end
+  end
   local n, kosten, maxP, naechster = 0, 0, 0, nil
   for _, x in ipairs(l.st) do
     if x.p <= Rv * grenze and n < cap then
@@ -3463,6 +3478,12 @@ function GF.sniperBewerten(id)
   local deckel = halb - schonVorher
   if R < 100 then deckel = math.min(deckel, 200) end
   if knaller then deckel = math.max(deckel, math.floor(umsatz) - schonVorher) end -- Knaller: bis 1 Tagesumsatz, kein Billig-Deckel
+  -- 2.66.1 (Wunsch Alex 21.11. 22:13: „keine Kisten mehr, wenn dann max. 5–10 Stück“): Kisten (z. B. „Abgefangene Kiste: …“)
+  -- hoechstens 10 Stueck – inkl. dem, was du schon hast (Tasche/Bank/AH)
+  if kiste then
+    deckel = math.min(deckel, 10 - schonVorher)
+    if deckel < 1 then return snNein(id, "Kiste: du hast schon " .. schonVorher .. " (max. 10)") end
+  end
   if deckel < 1 then return snNein(id, "du hast schon genug (" .. schonVorher .. ")") end
   local T = (not l.einzel) and GF.treppe(id, R, math.floor(Rv * grenze), deckel, budget, Rv) or nil
   if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
@@ -3597,6 +3618,16 @@ local function snKlick(self, knopf, down)
   -- Orange bestaetigt nie beim Loslassen (bewusster 2. Druck). Schutz: 0,6 Sek. nach einem Kauf und die ersten
   -- 0,25 Sek. eines neuen Treffers zaehlt keine Eingabe (Mausrad/gehaltene Taste kauft nichts Ungesehenes).
   local los = (down == false)
+  -- 2.66.1 (Befund Alex 21.11. 22:14: „muss dennoch 2× drücken“): messen, ob WoW das Loslassen meldet und ob der Preis
+  -- beim Loslassen schon da war -> „Warum nicht?“
+  if knopf ~= "RightButton" then
+    local D2 = GF.sniperDiag(); D2.tasten = D2.tasten or { runter = 0, los = 0, losOhnePreis = 0, ohneArt = 0 }
+    local T2 = D2.tasten
+    if down == true then T2.runter = T2.runter + 1 elseif los then T2.los = T2.los + 1 else T2.ohneArt = T2.ohneArt + 1 end
+    local k1 = GF.kaufLauf
+    if los and not (k1 and k1.unit) then T2.losOhnePreis = T2.losOhnePreis + 1 end
+    if los and k1 and k1.gt0 then T2.ms = math.floor((gt() - k1.gt0) * 1000) end
+  end
   if S.sperreBis and gt() < S.sperreBis then return end
   if knopf ~= "RightButton" and not los and not GF.kaufLauf and t.zeigGT and gt() - t.zeigGT < 0.25 then return end
   if los then
@@ -3995,6 +4026,9 @@ function GF.sniperWarum()
   local function schnitt(l) if not l or #l == 0 then return nil end local x = 0; for _, v in ipairs(l) do x = x + v end; return math.floor(x / #l + 0.5) end
   local dd, bt = schnitt(D2.dauer), schnitt(D2.bisTreffer)
   if dd or bt then print(GRAU .. "  Tempo: Ø Durchgang " .. (dd and (dd .. " Sek.") or "—") .. " · Ø vom Fund bis zum Treffer " .. (bt and (bt .. " Sek.") or "—") .. ENDE) end
+  local T2 = D2.tasten
+  if T2 then print(GRAU .. "  Tasten: drücken " .. T2.runter .. " · loslassen " .. T2.los .. " (davon Preis noch nicht da " .. T2.losOhnePreis .. ") · ohne Angabe " .. T2.ohneArt ..
+    (T2.ms and (" · zuletzt gehalten " .. T2.ms .. " ms") or "") .. (T2.preisMs and (" · Preis kam nach " .. T2.preisMs .. " ms") or "") .. ENDE) end
   if (D2.gespart or 0) > 0 then print(GRAU .. "  Gesparte Suchen (Preis unverändert): " .. D2.gespart .. ENDE) end
   local g = sortiert(D2.g)
   if #g == 0 then print(GRAU .. "  Noch keine abgelehnten Kandidaten." .. ENDE) end

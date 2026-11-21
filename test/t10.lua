@@ -9,6 +9,7 @@ RES = {
 }
 C_AuctionHouse.GetBrowseResults = function() return RES end
 C_AuctionHouse.HasFullBrowseResults = function() return true end
+GoldForeverDB.sniper = GoldForeverDB.sniper or {}; GoldForeverDB.sniper.fokusAus = true -- 2.67: Fokus hier aus (eigener Test t25)
 GF.sniper.an = false; GF.sniper.treffer = nil; GF.sniper.queue = {}; GF.sniper.suche = nil; GF.sniper.browseLaeuft = false; GF.sniper.laeuft = false; GF.sniper.zyklus = 0
 GF.sniperUmschalten(true)
 zeige("Browse gesendet: " .. BROWSE .. " Klassen " .. #BQ.itemClassFilters)

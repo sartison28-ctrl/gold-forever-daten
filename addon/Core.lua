@@ -3326,6 +3326,8 @@ local function snDiag()
 end
 GF.sniperDiag = snDiag
 local function snNein(id, grund, x)
+  -- 2.67: Fokus-Suchen (alle ~0,5 Sek.) nicht in die Diagnose zaehlen – sonst verdraengen sie alle anderen Faelle
+  if GF.sniper.fokusJetzt then GF.sniper.letzterGrund = grund; return nil end
   local D2 = snDiag()
   D2.kand = D2.kand + 1
   D2.g[grund] = (D2.g[grund] or 0) + 1
@@ -3422,7 +3424,7 @@ function GF.sniperBewerten(id)
   local gekauftZuletzt = false
   for k2 = #(snDB().log or {}), math.max(1, #(snDB().log or {}) - 20), -1 do
     local lg = snDB().log[k2]
-    if lg and lg.id == id and time() - (lg.t or 0) < 600 and lg.aus == "gekauft" then gekauftZuletzt = true; break end
+    if lg and lg.id == id and time() - (lg.t or 0) < 600 and (lg.aus == "gekauft" or lg.aus == "zu spät") then gekauftZuletzt = true; break end -- 2.67: „zu spät“ = Konkurrenz, keine Preis-Hektik
   end
   if gekauftZuletzt then frisch = {} end
   if S.rest and S.rest[id] and time() - S.rest[id] < 30 then frisch = {} end -- 2.66: Rest-Suche nach „zu spät“
@@ -3537,7 +3539,7 @@ local function snLog(t, aus)
     wt = tonumber(date("%w", t.t)), kosten = t.kosten, rk = t.risiko, rg = t.risikoGrund, mo = GF.sniper and GF.sniper.modus,
     u = t.umsatz and math.floor(t.umsatz) or nil, Rv = t.Rv, sek = t.sek, kn = t.knaller and true or nil, ev = t.eigenVK, ez = t.einzel and true or nil,
     -- 2.66: warum zu spaet (teurer = Teil weg / weg = ganz weg) + Server-Stueckpreis; Rest-Treffer; Reaktionszeit (Anzeige -> 1. Druck)
-    zs = t.zs, zp = t.zp, rest = t.rest, rz = t.rz }
+    zs = t.zs, zp = t.zp, rest = t.rest, rz = t.rz, fk = t.fokus }
   while #d.log > 3000 do table.remove(d.log, 1) end -- 2.64.1: laenger aufheben (Lernen, Auswertung)
 end
 GF.sniperLog = snLog
@@ -3767,6 +3769,11 @@ local function snBauen()
   b:SetScript("OnEnter", function(self) local c = self.farbe or { 0.65, 0.45, 0.95 }; self.bg:SetColorTexture(c[1], c[2], c[3], 0.7) end)
   b:SetScript("OnLeave", function(self) local c = self.farbe or { 0.65, 0.45, 0.95 }; self.bg:SetColorTexture(c[1], c[2], c[3], 0.45) end)
   b:Hide(); snF.knopf = b
+  -- 2.67 (Befund Alex 21.11. 22:25: Mausrad-Belegung ging nicht – über dem AH-Fenster schluckt WoW das Rad):
+  -- Mausrad direkt ueber der Sniper-Leiste/dem Knopf = Druck auf den Knopf (jede Raste eine echte Eingabe)
+  local function rad() if b:IsShown() then snKlick(b, "LeftButton") end end
+  b:EnableMouseWheel(true); b:SetScript("OnMouseWheel", rad)
+  snF:EnableMouseWheel(true); snF:SetScript("OnMouseWheel", rad)
   -- 2.61.2: „Warum nicht?“ oben rechts
   snF.warum = CreateFrame("Button", nil, snF); snF.warum:SetSize(80, 16); snF.warum:SetPoint("TOPRIGHT", -6, -3)
   snF.warum.fs = snF.warum:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); snF.warum.fs:SetPoint("RIGHT"); snF.warum.fs:SetText("Warum nicht?")
@@ -3792,9 +3799,44 @@ end
 -- Kandidaten (Preis unter Kaufgrenze, >= 50 Verkaeufe/Tag, nicht eingebrochen/fallend) kommen in eine Warteschlange,
 -- dort folgt die Detail-Suche (Preistreppe) -> Treffer. Zwischen den Durchgaengen: Merkliste (eigene/bewaehrte).
 local SN_KLASSEN = { 7, 0, 5, 15 }
+-- 2.67 Fokus-Snipe (Wunsch Alex 21.11. 22:25: „Leder und Stoffe – gerade oft Magiestoff da und kein einziges bekommen“):
+-- Leder/Stoffe sind umkaempft (andere Sniper fragen wenige Items sekuendlich ab). GF fragt die 4 wichtigsten Leder/Stoffe
+-- zusaetzlich zur Durchsuche gezielt ab: alle 0,5 Sek. eine Fokus-Suche reihum -> jedes Fokus-Item ca. alle 2 Sek.
+-- Auswahl: Name endet auf „Leder“, „stoff“ oder „stoffballen“, mind. 200 Verkaeufe/Tag, nicht Raid/Haendlerware;
+-- Reihenfolge: Sniper-Treffer der letzten 3 Tage, dann Gold-Umsatz. Eigene Fokus-Items: /gf sniper fokus [Item].
+local SN_FOKUS_N, SN_FOKUS_TAKT = 4, 0.5
+function GF.istLederStoff(id)
+  local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(id))
+  if not name then return false end
+  return name:find("Leder$") ~= nil or name:find("stoff$") ~= nil or name:find("stoffballen$") ~= nil
+end
+function GF.sniperFokus(neu)
+  local S = GF.sniper
+  if not neu and S.fokus and time() - (S.fokusListeT or 0) < 300 then return S.fokus end
+  local db = snDB(); db.fokus = db.fokus or {}
+  local treffer = {}
+  local ab = time() - 3 * 86400
+  for _, e in ipairs(db.log or {}) do if (e.t or 0) >= ab and e.id then treffer[e.id] = (treffer[e.id] or 0) + 1 end end
+  local kand, out, drin = {}, {}, {}
+  for id in pairs(db.fokus) do id = tonumber(id); if id and not drin[id] then drin[id] = true; out[#out + 1] = id end end
+  for id in pairs(GF.alleIds()) do
+    if not drin[id] and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) and GF.istLederStoff(id) then
+      local i = GF.info(id)
+      if i and not i.vb and (i.u or 0) >= 200 and GF.handelbar(i) then
+        local R = GF.referenz(id, i)
+        if R and R > 0 then kand[#kand + 1] = { id = id, w = (treffer[id] or 0) * 1e9 + (i.u or 0) * R } end
+      end
+    end
+  end
+  table.sort(kand, function(a, b) return a.w > b.w end)
+  for _, k in ipairs(kand) do if #out >= SN_FOKUS_N then break end; out[#out + 1] = k.id end
+  S.fokus, S.fokusListeT = out, time()
+  return out
+end
 local function snSuche(id)
   local S = GF.sniper
   S.aktuell, S.suche, S.sucheT = id, id, time()
+  S.sucheFokus = S.fokusNaechste == id; S.fokusNaechste = nil
   S.geprueft = S.geprueft or {}; S.geprueft[id] = time()
   pcall(function()
     local sortierung = { { sortOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0, reverseSort = false } }
@@ -3916,6 +3958,24 @@ local function snSchritt()
   -- AH-Sperre von Blizzard beachten (sonst gehen Anfragen verloren)
   if C_AuctionHouse.IsThrottledMessageSystemReady and not C_AuctionHouse.IsThrottledMessageSystemReady() then return end
   local browse = C_AuctionHouse and C_AuctionHouse.SendBrowseQuery
+  -- 2.67 Fokus-Snipe: alle 0,5 Sek. ein Leder/Stoff gezielt abfragen (vor Warteschlange und Durchsuche)
+  if browse and not snDB().fokusAus then
+    local fk = GF.sniperFokus()
+    local jetztG = (GetTime and GetTime()) or time()
+    if #fk > 0 and jetztG - (S.fokusT or 0) >= SN_FOKUS_TAKT then
+      S.fokusT = jetztG
+      for _ = 1, #fk do
+        S.fokusI = ((S.fokusI or 0) % #fk) + 1
+        local id = fk[S.fokusI]
+        if not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
+          S.fokusNaechste = id
+          S.fundZeit = S.fundZeit or {}; S.fundZeit[id] = time()
+          local D2 = GF.sniperDiag(); D2.fokusN = (D2.fokusN or 0) + 1
+          snSuche(id); GF.sniperZeigen(); return
+        end
+      end
+    end
+  end
   if browse then
     S.queue = S.queue or {}
     local id = table.remove(S.queue, 1)
@@ -3952,7 +4012,10 @@ function GF.sniperErgebnis(id)
   if not (S.an and S.suche == id) then return false end
   S.suche = nil; S.aktuell = nil
   S.letzterGrund = nil
+  S.fokusJetzt = S.sucheFokus; S.sucheFokus = nil
   local t = GF.sniperBewerten(id)
+  if t and S.fokusJetzt then t.fokus = true; local D2 = GF.sniperDiag(); D2.fokusTreffer = (D2.fokusTreffer or 0) + 1 end
+  S.fokusJetzt = nil
   -- 2.65: Nein-Merker – Preis-Gruende bis ein billigeres Angebot kommt (max. 5 Min.), feste Gruende 30 Min.
   if not t and S.letzterGrund then
     local l = GF.live[id]
@@ -4026,6 +4089,10 @@ function GF.sniperWarum()
   local function schnitt(l) if not l or #l == 0 then return nil end local x = 0; for _, v in ipairs(l) do x = x + v end; return math.floor(x / #l + 0.5) end
   local dd, bt = schnitt(D2.dauer), schnitt(D2.bisTreffer)
   if dd or bt then print(GRAU .. "  Tempo: Ø Durchgang " .. (dd and (dd .. " Sek.") or "—") .. " · Ø vom Fund bis zum Treffer " .. (bt and (bt .. " Sek.") or "—") .. ENDE) end
+  if not snDB().fokusAus then
+    local t = {}; for _, x in ipairs(GF.sniperFokus()) do t[#t + 1] = nm(x) end
+    print(GRAU .. "  Fokus (je ~2 Sek.): " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) .. ENDE)
+  end
   local T2 = D2.tasten
   if T2 then print(GRAU .. "  Tasten: drücken " .. T2.runter .. " · loslassen " .. T2.los .. " (davon Preis noch nicht da " .. T2.losOhnePreis .. ") · ohne Angabe " .. T2.ohneArt ..
     (T2.ms and (" · zuletzt gehalten " .. T2.ms .. " ms") or "") .. (T2.preisMs and (" · Preis kam nach " .. T2.preisMs .. " ms") or "") .. ENDE) end
@@ -4059,6 +4126,17 @@ function GF.sniperBefehl(rest)
     if cmd == "" then GF.sniperUmschalten() else GF.sniperUmschalten(cmd == "an") end
   elseif cmd == "add" and id then db.eigen[id] = true; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " in der Merkliste.")
   elseif cmd == "del" and id then db.eigen[id] = nil; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " entfernt.")
+  elseif cmd == "fokus" then
+    db.fokus = db.fokus or {}
+    local fid = wert and (tonumber(wert:match("item:(%d+)")) or tonumber(wert))
+    if wert == "aus" or wert == "an" then db.fokusAus = (wert == "aus") or nil
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus-Snipe " .. (db.fokusAus and "aus." or "an."))
+    elseif fid then
+      if db.fokus[fid] then db.fokus[fid] = nil else db.fokus[fid] = true end
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus " .. (db.fokus[fid] and "+ " or "– ") .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(fid)) or fid))
+    end
+    local t = {}; for _, x in ipairs(GF.sniperFokus(true)) do t[#t + 1] = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x) end
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus (je ~2 Sek. geprüft): " .. (#t > 0 and table.concat(t, ", ") or "—") .. GRAU .. "  ·  /gf sniper fokus [Item] = dazu/weg · /gf sniper fokus aus|an" .. ENDE)
   elseif cmd == "rad" then
     db.rad = not db.rad
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Mausrad " .. (db.rad and "AN – jede Raste zählt wie ein Druck auf " .. db.taste .. " (nur solange ein Treffer angezeigt wird)." or "aus."))

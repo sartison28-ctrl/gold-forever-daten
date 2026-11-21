@@ -1561,13 +1561,19 @@ local function diagrammZeichnen(c, pts, reihen, tipZeilen)
         ln:SetThickness(r.dick or 2); ln:SetColorTexture(r.farbe[1], r.farbe[2], r.farbe[3], r.alpha or 1); ln:Show()
       end
       if r.fuell then
-        -- Flaeche unter der Linie: schmale Saeulen je Abschnitt
-        fi = fi + 1
-        local t = f.fuell[fi]; if not t then t = f:CreateTexture(nil, "BORDER"); f.fuell[fi] = t end
+        -- Flaeche unter der Linie: schmale Saeulen (hoechstens 4 px), Hoehe entlang der Linie (2.63.2: keine Treppen)
         local xa, xb = X(pts[k - 1].t), X(pts[k].t)
-        local h = (Y(r.werte[k - 1]) + Y(r.werte[k])) / 2
-        t:ClearAllPoints(); t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", xa, 0); t:SetSize(math.max(1, xb - xa), math.max(1, h))
-        t:SetColorTexture(r.farbe[1], r.farbe[2], r.farbe[3], 0.10); t:Show()
+        local ya, yb = Y(r.werte[k - 1]), Y(r.werte[k])
+        local n = math.max(1, math.ceil((xb - xa) / 4))
+        for j = 1, n do
+          if fi >= 400 then break end
+          fi = fi + 1
+          local t = f.fuell[fi]; if not t then t = f:CreateTexture(nil, "BORDER"); f.fuell[fi] = t end
+          local x1 = xa + (xb - xa) * (j - 1) / n; local x2 = xa + (xb - xa) * j / n
+          local h = ya + (yb - ya) * ((j - 0.5) / n)
+          t:ClearAllPoints(); t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", x1, 0); t:SetSize(math.max(1, x2 - x1 + 0.5), math.max(1, h))
+          t:SetColorTexture(r.farbe[1], r.farbe[2], r.farbe[3], 0.10); t:Show()
+        end
       end
     end
   end
@@ -1628,7 +1634,7 @@ local function tabelleFuellen(t, titel, kopf, rows)
       n = k
       z.l:SetText(r.summe and (H.hell .. r.l .. ENDE) or (H.grau .. r.l .. ENDE))
       for j, c in ipairs(z.c) do c:SetText((r.c or {})[j] or "") end
-      z.linie:SetShown(r.summe or false); z.tipp, z.klick = r.tipp, r.klick
+      z.linie:SetShown(false); z.tipp, z.klick = r.tipp, r.klick -- 2.63.2: keine Trennlinie (Wunsch Alex), Summen nur hell
       z:Show()
     else z:Hide() end
   end
@@ -1773,7 +1779,7 @@ function ANSICHTEN.bilanz(v)
   local function gegen(liste) local q = liste[1]; if not q then return H.grau .. "—" .. ENDE end return plusMinusKurz(vermJetzt - ((q.g or 0) + (q.w or 0))) end
   rowsV[#rowsV + 1] = { l = "gegenüber vor 24 Std.", c = { gegen(vv), "" } }
   rowsV[#rowsV + 1] = { l = "gegenüber vor 7 Tagen", c = { gegen(v7), "" } }
-  local hTab2 = tabelleFuellen(v.tabVerm, H.gold .. "Vermögen – woraus es besteht" .. ENDE, { "Wert", "Anteil" }, rowsV)
+  local hTab2 = tabelleFuellen(v.tabVerm, H.gold .. "Vermögen – woraus es besteht" .. ENDE, { "Wert", "Anteil" }, rowsV) -- Spalte 1 (Wert) rechts wie in Tabelle 1, Anteil davor
   local yT = 30 + 122 + 12 + 122 + 16
   v.tabGold:ClearAllPoints(); v.tabGold:SetPoint("TOPLEFT", 0, -yT)
   yT = yT + hTab1 + 16
@@ -2209,7 +2215,7 @@ local function baueAnsichten(kind)
   b.diaGold = diagramm(b, "Gold"); b.diaGold:SetPoint("TOPLEFT", 0, -30)
   b.diaVerm = diagramm(b, "Vermögen"); b.diaVerm:SetPoint("TOPLEFT", 0, -(30 + 122 + 12))
   b.tabGold = tabelle(b, { 436 }, 10)
-  b.tabVerm = tabelle(b, { 353, 436 }, 12)
+  b.tabVerm = tabelle(b, { 436, 353 }, 12)
   b.jeReiter = text(b, 10); b.jeReiter:SetWidth(INNEN - 96); b.jeReiter:SetWordWrap(false)
   -- 2.55 (Befund 46): Top-Verkäufe & Verluste je Item
   b.top = link(b, 10, function()

@@ -1205,20 +1205,28 @@ local function pzText(x) x = math.floor(x * 100 + (x >= 0 and 0.5 or -0.5)); ret
 local function plusMinus(g) return (g >= 0 and (GRUEN .. "+") or (ORANGE .. "-")) .. GF.geld(math.abs(g)) .. ENDE end
 local function zeile(tt, links, rechts) tt:AddDoubleLine(GRAU .. links .. ENDE, rechts or "") end
 local function positionKompakt(tt, id, i, e)
+  -- 2.63.3 (Wunsch Alex 21.11. 15:43): ein Preis, ein Gewinn. „Dein Preis“ = im AH eingestellter Preis,
+  -- sonst Einstellpreis (Verkaufen) bzw. Ziel (Halten); Gewinn = dein Preis nach Gebuehr minus Einkauf, ganze Menge.
   local p, pl = e.position, e.plan
   local R = GF.referenz(id, i)
-  local markt = i.p and (i.p - 1)
+  local markt = i.p
   zeile(tt, "Einkauf", WEISS .. p.n .. "× je " .. GF.geld(p.ek) .. "  =  " .. GF.geld(math.floor(p.ek * p.n)) .. ENDE)
-  if R then zeile(tt, "Üblich", GRAU .. GF.geld(R) .. ENDE) end
-  if markt then
-    local f = (markt * 0.95 >= p.ek) and GRUEN or ORANGE
-    zeile(tt, "Jetzt", f .. GF.geld(markt + 1) .. "   " .. pzText((markt + 1) / p.ek - 1) .. " zum Einkauf" .. ENDE)
-  end
-  if p.ziel then zeile(tt, "Ziel", BLAU .. GF.geld(p.ziel) .. (markt and ("   " .. pzText(p.ziel / (markt + 1) - 1)) or "") .. ENDE) end
-  local gZiel = p.ziel and math.floor((p.ziel * 0.95 - p.ek) * p.n)
-  local gJetzt = markt and math.floor((markt * 0.95 - p.ek) * p.n)
-  if gZiel or gJetzt then
-    zeile(tt, "Gewinn", (gZiel and (GRAU .. "bei Ziel " .. ENDE .. plusMinus(gZiel)) or "") .. ((gZiel and gJetzt) and (GRAU .. " · " .. ENDE) or "") .. (gJetzt and (GRAU .. "jetzt " .. ENDE .. plusMinus(gJetzt)) or ""))
+  if markt then zeile(tt, "Markt", WEISS .. GF.geld(markt) .. ENDE .. (R and (GRAU .. "   (üblich " .. GF.geld(R) .. ")" .. ENDE) or ""))
+  elseif R then zeile(tt, "Üblich", GRAU .. GF.geld(R) .. ENDE) end
+  local preis, wo
+  if (p.imAH or 0) > 0 and p.ahPreis then preis, wo = p.ahPreis, "im AH"
+  elseif pl.art == "verk" and pl.preis then preis, wo = pl.preis, "einstellen"
+  else preis, wo = p.ziel, "Ziel" end
+  if preis then
+    zeile(tt, "Dein Preis", BLAU .. GF.geld(preis) .. ENDE .. GRAU .. "   " .. wo .. ENDE)
+    local g = math.floor((preis * 0.95 - p.ek) * p.n)
+    local pz = p.ek > 0 and ("   (" .. pzText(preis * 0.95 / p.ek - 1) .. ")") or ""
+    zeile(tt, "Gewinn", plusMinus(g) .. GRAU .. pz .. ENDE)
+    -- Markt deutlich hoeher als dein AH-Preis -> Hinweis
+    if wo == "im AH" and markt and markt - 1 > preis * 1.05 then
+      local mehr = math.floor((markt - 1 - preis) * 0.95 * (p.imAH or p.n))
+      tt:AddLine(ORANGE .. "Markt höher – evtl. neu für " .. GF.geld(markt - 1) .. " einstellen (+" .. GF.geld(mehr) .. " mehr)" .. ENDE, 1, 1, 1, true)
+    end
   end
   tt:AddLine(TRENNER)
   -- Prognose: eine Aussage
@@ -1226,14 +1234,14 @@ local function positionKompakt(tt, id, i, e)
   local endeTxt = (GF.WT and GF.WT[tonumber(date("%w", ende)) + 1] or "") .. " " .. date("%d.%m.", ende)
   if pl.art == "verk" then
     local f = pl.stop and ORANGE or GRUEN
-    tt:AddLine(f .. (pl.stop and "Verlust begrenzen: " or "Jetzt einstellen") .. (pl.preis and (" für " .. GF.geld(pl.preis)) or "") .. ENDE)
+    tt:AddLine(f .. (pl.stop and "Verlust begrenzen – jetzt einstellen" or "Jetzt einstellen") .. ENDE)
   elseif pl.imAH or pl.post or pl.verkauft then
     tt:AddLine(GOLD .. pl.kurz .. ENDE)
   else
     local kurs = GF.kursVerlauf and GF.kursVerlauf(id)
     if kurs then kurs.ziel = p.ziel end
     local wann = GF.haltenWann and GF.haltenWann(p, kurs) or pl.kurz
-    wann = (wann or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    wann = (wann or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%+%d+ %% · ", "") -- Abstand zum Ziel weglassen (2.63.3)
     local tr = GF.kursTrend and GF.kursTrend(id, kurs)
     local sym = (tr and tr <= -1) and (PFEIL_AB .. " ") or ((tr and tr >= 1) and (PFEIL_AUF .. " ") or "")
     tt:AddLine(sym .. GOLD .. "Halten · " .. wann .. ENDE, 1, 1, 1, true)

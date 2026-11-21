@@ -1745,6 +1745,22 @@ function GF.positionen()
       if p.n > 0 then p.kosten = p.kosten * (p.n - weg) / p.n end
       p.n = p.n - weg
     end
+    -- 2.59: Umzug per Post an eigenen Charakter – Einkauf (Kosten, Ziel, Kaufzeit) wandert mit
+    if x.art == "umzug" and x.von and x.an then
+      local q = pos[x.von .. ":" .. x.id]
+      if q and q.n > 0 then
+        local m = math.min(q.n, x.n)
+        local anteil = q.kosten * m / q.n
+        local zAvg = q.zielN > 0 and (q.zielSumme / q.zielN) or nil
+        q.kosten = q.kosten - anteil; q.n = q.n - m
+        if zAvg then q.zielSumme = zAvg * math.min(q.zielN, q.n); q.zielN = math.min(q.zielN, q.n) end
+        local kz = x.an .. ":" .. x.id
+        local z = pos[kz] or { id = x.id, char = x.an, n = 0, kosten = 0, zielSumme = 0, zielN = 0, seit = q.seit, hergestellt = q.hergestellt }
+        z.n = z.n + m; z.kosten = z.kosten + anteil; if q.seit < z.seit then z.seit = q.seit end
+        if zAvg then z.zielSumme = z.zielSumme + zAvg * m; z.zielN = z.zielN + m end
+        pos[kz] = z
+      end
+    end
   end
   for _, p in pairs(pos) do
     local id = p.id
@@ -3319,8 +3335,115 @@ function GF.sniperBefehl(rest)
   end
 end
 
+-- ---------------------------------------------------------------- Umzug zu Bank-Charakteren (2.59, Wunsch Alex 21.11.)
+-- Eigene Charaktere merkt GF beim Einloggen (GoldForeverDB.chars). Wird Ware per Post an einen eigenen Charakter
+-- geschickt, wandern die GF-Einkaeufe mit (Einkaufspreis, Ziel, Kaufzeit, "durch GF"): Bilanz-Buch-Eintrag art="umzug".
+-- Am Briefkasten: Knopf "Halten → <Bank-Charakter>" legt bis zu 12 Stapel der Halten-Ware als Anhang bei
+-- (Abschicken bleibt dein Klick). Bank-Charakter: /gf bank <Name> (mehrere moeglich), sonst der letzte gewaehlte.
+local function nameKurz(n) n = (n or ""):gsub("%-.*$", ""); return n end
+function GF.eigeneChars()
+  GoldForeverDB.chars = GoldForeverDB.chars or {}
+  return GoldForeverDB.chars
+end
+function GF.istEigenerChar(name)
+  name = nameKurz(name):lower()
+  for c in pairs(GF.eigeneChars()) do if c:lower() == name then return c end end
+  for c in pairs(GoldForeverDB.bankChars or {}) do if c:lower() == name then return c end end
+  return nil
+end
+local umzugOffen = nil
+local function sendHaken(empf)
+  umzugOffen = nil
+  local ziel = GF.istEigenerChar(empf)
+  if not ziel or ziel == charKey() then return end
+  local teile = {}
+  for k = 1, (ATTACHMENTS_MAX_SEND or 12) do
+    local ok, name, itemID, _, menge = pcall(GetSendMailItem, k)
+    if ok and itemID and (menge or 0) > 0 then teile[#teile + 1] = { id = itemID, n = menge } end
+  end
+  if #teile > 0 then umzugOffen = { an = ziel, von = charKey(), teile = teile, t = time() } end
+end
+function GF.umzugFertig(ok)
+  local u = umzugOffen; umzugOffen = nil
+  if not (ok and u) then return end
+  local b = B()
+  local n = 0
+  for _, x in ipairs(u.teile) do
+    b.buch[#b.buch + 1] = { t = time(), art = "umzug", id = x.id, n = x.n, betrag = 0, von = u.von, an = u.an, char = u.von }
+    n = n + x.n
+  end
+  print(GOLD .. "Gold Forever:" .. ENDE .. " " .. n .. " Stück an " .. u.an .. " geschickt – Einkaufspreise und Ziele wandern mit.")
+end
+-- Halten-Ware in den Taschen (Positionen mit Plan "halten" + eigene Ware zum Warten)
+function GF.haltenIds()
+  local ids = {}
+  for _, p in ipairs(GF.positionen()) do
+    if (p.da or 0) > 0 then
+      local pl = GF.verkaufsPlan(p)
+      if pl and pl.art == "halt" and not pl.imAH then ids[p.id] = true end
+    end
+  end
+  for _, v in ipairs(GF.warteListe()) do ids[v.id] = true end
+  return ids
+end
+function GF.haltenVerschicken()
+  if not (SendMailFrame and SendMailFrame:IsShown()) then print(GOLD .. "Gold Forever:" .. ENDE .. " Erst den Briefkasten öffnen und auf „Senden“ wechseln."); return end
+  local ziel = GoldForeverDB.bankChar
+  if not ziel then print(GOLD .. "Gold Forever:" .. ENDE .. " Noch kein Bank-Charakter – /gf bank <Name>"); return end
+  if SendMailNameEditBox then SendMailNameEditBox:SetText(ziel) end
+  local ids, frei, n = GF.haltenIds(), (ATTACHMENTS_MAX_SEND or 12), 0
+  for k = 1, frei do local ok, _, itemID = pcall(GetSendMailItem, k); if ok and itemID then frei = frei - 1 end end
+  for b = 0, 4 do
+    local ok, slots = pcall(C_Container.GetContainerNumSlots, b)
+    for s = 1, (ok and slots or 0) do
+      if n >= frei then break end
+      local ok2, info = pcall(C_Container.GetContainerItemInfo, b, s)
+      if ok2 and info and info.itemID and ids[info.itemID] and not info.isBound and not info.isLocked then
+        C_Container.UseContainerItem(b, s); n = n + 1
+      end
+    end
+  end
+  if SendMailSubjectEditBox and (SendMailSubjectEditBox:GetText() or "") == "" then SendMailSubjectEditBox:SetText("GF Halten") end
+  print(GOLD .. "Gold Forever:" .. ENDE .. " " .. n .. " Stapel Halten-Ware an " .. ziel .. " angehängt" .. (n >= frei and " (Post voll – nach dem Senden noch einmal klicken)" or "") .. ". Jetzt „Senden“ klicken.")
+end
+local postKnopf
+function GF.postKnopf()
+  if postKnopf or not SendMailFrame then
+    if postKnopf then postKnopf:SetShown(GoldForeverDB.bankChar ~= nil and GoldForeverDB.bankChar ~= charKey()); if GoldForeverDB.bankChar then postKnopf.t:SetText("GF: Halten → " .. GoldForeverDB.bankChar) end end
+    return
+  end
+  local b = CreateFrame("Button", "GoldForeverPostKnopf", SendMailFrame)
+  b:SetSize(190, 22); b:SetPoint("BOTTOMLEFT", SendMailFrame, "TOPLEFT", 60, 2)
+  b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(); b.bg:SetColorTexture(0.35, 0.55, 0.95, 0.6)
+  b.t = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); b.t:SetPoint("CENTER")
+  b:SetScript("OnClick", function() GF.haltenVerschicken() end)
+  b:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.45, 0.65, 1, 0.8)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:AddLine("Halten-Ware an den Bank-Charakter")
+    GameTooltip:AddLine("Hängt bis zu 12 Stapel der blauen Halten-Items an. Einkaufspreise und Ziele wandern mit.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show() end)
+  b:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.35, 0.55, 0.95, 0.6); GameTooltip:Hide() end)
+  postKnopf = b
+  GF.postKnopf()
+end
+function GF.bankBefehl(rest)
+  local name = nameKurz((rest or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+  GoldForeverDB.bankChars = GoldForeverDB.bankChars or {}
+  if name == "" then
+    local l = {}; for c in pairs(GoldForeverDB.bankChars) do l[#l + 1] = c end
+    print(GOLD .. "Gold Forever:" .. ENDE .. " Bank-Charakter: " .. (GoldForeverDB.bankChar or "–") .. (#l > 0 and (" · bekannt: " .. table.concat(l, ", ")) or "") .. " · /gf bank <Name> wählt einen")
+    return
+  end
+  name = GF.istEigenerChar(name) or name
+  GoldForeverDB.bankChars[name] = true; GoldForeverDB.bankChar = name
+  print(GOLD .. "Gold Forever:" .. ENDE .. " Bank-Charakter ist jetzt " .. name .. ". Am Briefkasten: Knopf „GF: Halten → " .. name .. "“.")
+  if GF.postKnopf then pcall(GF.postKnopf) end
+end
+if hooksecurefunc then pcall(hooksecurefunc, "SendMail", function(empf) pcall(sendHaken, empf) end) end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+pcall(f.RegisterEvent, f, "MAIL_SEND_SUCCESS")
+pcall(f.RegisterEvent, f, "MAIL_FAILED")
 f:RegisterEvent("CHAT_MSG_LOOT")
 f:RegisterEvent("PLAYER_MONEY")
 f:RegisterEvent("AUCTION_HOUSE_SHOW")
@@ -3352,7 +3475,7 @@ f:SetScript("OnEvent", function(_, ev, ...)
   if ev == "LOOT_OPENED" or ev == "LOOT_READY" or ev == "LOOT_CLOSED" or ev == "CHAT_MSG_MONEY" or ev == "QUEST_COMPLETE" or ev == "QUEST_TURNED_IN"
     or ev == "QUEST_FINISHED" or ev == "MERCHANT_SHOW" or ev == "MERCHANT_CLOSED" or ev == "MAIL_SHOW" or ev == "MAIL_CLOSED" then
     pcall(GF.geldKontext, ev)
-    if ev == "MAIL_SHOW" then pcall(postGeldHaken) end
+    if ev == "MAIL_SHOW" then pcall(postGeldHaken); pcall(GF.postKnopf) end
     if ev ~= "MERCHANT_SHOW" then return end
   end
   if ev == "MERCHANT_SHOW" or ev == "MERCHANT_UPDATE" then
@@ -3400,7 +3523,10 @@ f:SetScript("OnEvent", function(_, ev, ...)
   end
   if ev == "BANKFRAME_CLOSED" then GF.bankOffen = false; if GF.aktualisieren then pcall(GF.aktualisieren) end; return end
   if ev == "PLAYERBANKSLOTS_CHANGED" or ev == "PLAYERREAGENTBANKSLOTS_CHANGED" then pcall(GF.bankMerken); pcall(GF.punkteAktualisieren); return end
+  if ev == "MAIL_SEND_SUCCESS" then pcall(GF.umzugFertig, true); return end
+  if ev == "MAIL_FAILED" then pcall(GF.umzugFertig, false); return end
   if ev == "PLAYER_LOGIN" then
+    GF.eigeneChars()[charKey()] = true -- 2.59: eigene Charaktere fuer den Umzug merken
     hookTooltips(); tagPruefen(); pcall(taschenHaken); pcall(kaufHaken); B(); pcall(GF.geldBuchen)
     if C_Timer then
       C_Timer.After(8, function() pcall(GF.zieleCheck) end)
@@ -3422,9 +3548,11 @@ end)
 SLASH_GOLDFOREVER1 = "/gf"
 SLASH_GOLDFOREVER2 = "/goldforever"
 SlashCmdList.GOLDFOREVER = function(arg)
+  local roh = arg or ""
   arg = string.lower(arg or "")
   if arg == "einblenden" then GF.alleEinblenden(); return end
   if arg == "warum" then GF.kaufDiagnoseChat(); return end
+  if arg:match("^bank") then GF.bankBefehl((roh:gsub("^%s*[Bb][Aa][Nn][Kk]%s*", ""))); return end
   if arg:match("^sniper") then GF.sniperBefehl(arg:gsub("^sniper%s*", "")); return end
   if arg == "loot" then
     GoldForeverDB.loot = GoldForeverDB.loot == false

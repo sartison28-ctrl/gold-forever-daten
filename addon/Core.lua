@@ -1190,38 +1190,85 @@ end
 --   AH verkaufen · 34 % über Ø       8× = 1g 2s     <- Farbe der Kategorie
 --   Einstellen 8s 97c · 12 Std. · geht schnell     <- grau, nur beim Verkaufen
 --   Herstellen · ...                               <- gelb, nur wenn es sich lohnt
+-- 2.62 (Wunsch Alex 21.11. 02:41): kompakt, feste Farben, kleine Tabelle. Ausfuehrlich nur mit gedrueckter Shift-Taste.
+--   weiss = dein Einkauf · grau = ueblich/Nebeninfo · gruen = Gewinn/ueber Einkauf · orange = Verlust/unter Einkauf
+--   blau = Ziel · gold = Prognose (eine Aussage, dieselbe Quelle wie die Halten-Zeile)
+local ROT = "|cfff87171"
+local PFEIL_AB = "|TInterface\\Buttons\\Arrow-Down-Up:13:13:0:-2:32:32:0:32:0:32:251:146:60|t"
+local PFEIL_AUF = "|TInterface\\Buttons\\Arrow-Up-Up:13:13:0:-2:32:32:0:32:0:32:74:222:128|t"
+local function pzText(x) x = math.floor(x * 100 + (x >= 0 and 0.5 or -0.5)); return (x > 0 and "+" or "") .. x .. " %" end
+local function plusMinus(g) return (g >= 0 and (GRUEN .. "+") or (ORANGE .. "-")) .. GF.geld(math.abs(g)) .. ENDE end
+local function zeile(tt, links, rechts) tt:AddDoubleLine(GRAU .. links .. ENDE, rechts or "") end
+local function positionKompakt(tt, id, i, e)
+  local p, pl = e.position, e.plan
+  local R = GF.referenz(id, i)
+  local markt = i.p and (i.p - 1)
+  zeile(tt, "Einkauf", WEISS .. p.n .. "× je " .. GF.geld(p.ek) .. "  =  " .. GF.geld(math.floor(p.ek * p.n)) .. ENDE)
+  if R then zeile(tt, "Üblich", GRAU .. GF.geld(R) .. ENDE) end
+  if markt then
+    local f = (markt * 0.95 >= p.ek) and GRUEN or ORANGE
+    zeile(tt, "Jetzt", f .. GF.geld(markt + 1) .. "   " .. pzText((markt + 1) / p.ek - 1) .. " zum Einkauf" .. ENDE)
+  end
+  if p.ziel then zeile(tt, "Ziel", BLAU .. GF.geld(p.ziel) .. (markt and ("   " .. pzText(p.ziel / (markt + 1) - 1)) or "") .. ENDE) end
+  local gZiel = p.ziel and math.floor((p.ziel * 0.95 - p.ek) * p.n)
+  local gJetzt = markt and math.floor((markt * 0.95 - p.ek) * p.n)
+  if gZiel or gJetzt then
+    zeile(tt, "Gewinn", (gZiel and (GRAU .. "bei Ziel " .. ENDE .. plusMinus(gZiel)) or "") .. ((gZiel and gJetzt) and (GRAU .. " · " .. ENDE) or "") .. (gJetzt and (GRAU .. "jetzt " .. ENDE .. plusMinus(gJetzt)) or ""))
+  end
+  tt:AddLine(TRENNER)
+  -- Prognose: eine Aussage
+  local ende = (p.seit or time()) + 7 * 86400
+  local endeTxt = (GF.WT and GF.WT[tonumber(date("%w", ende)) + 1] or "") .. " " .. date("%d.%m.", ende)
+  if pl.art == "verk" then
+    local f = pl.stop and ORANGE or GRUEN
+    tt:AddLine(f .. (pl.stop and "Verlust begrenzen: " or "Jetzt einstellen") .. (pl.preis and (" für " .. GF.geld(pl.preis)) or "") .. ENDE)
+  elseif pl.imAH or pl.post or pl.verkauft then
+    tt:AddLine(GOLD .. pl.kurz .. ENDE)
+  else
+    local kurs = GF.kursVerlauf and GF.kursVerlauf(id)
+    if kurs then kurs.ziel = p.ziel end
+    local wann = GF.haltenWann and GF.haltenWann(p, kurs) or pl.kurz
+    wann = (wann or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local tr = GF.kursTrend and GF.kursTrend(id, kurs)
+    local sym = (tr and tr <= -1) and (PFEIL_AB .. " ") or ((tr and tr >= 1) and (PFEIL_AUF .. " ") or "")
+    tt:AddLine(sym .. GOLD .. "Halten · " .. wann .. ENDE, 1, 1, 1, true)
+    tt:AddLine(GRAU .. "Spätestens " .. endeTxt .. " verkaufen" .. ENDE)
+  end
+end
 local function tooltipZeilen(tt, id)
   if GoldForeverDB.tooltip == false then return end
+  GF.ttKompakt = nil
   if GF.ausgeblendet(id) then
     tt:AddLine(" "); tt:AddLine(GOLD .. "Gold Forever" .. ENDE .. GRAU .. "  ·  ausgeblendet (nutzt du selbst)" .. ENDE); return
   end
   local i = GF.info(id); if not i then return end
   local e = GF.entscheidung(id, i)
   local n = GF.anzahl(id)
-  -- Kompakt: hoechstens 3 Zeilen, lange Texte umbrechen statt den Tooltip breit zu ziehen
+  local shift = IsShiftKeyDown and IsShiftKeyDown()
   tt:AddLine(" ")
   local R, quelle = GF.referenz(id, i)
-  local kopf = GOLD .. "Gold Forever" .. ENDE
-  if i.p or i.r then
-    kopf = kopf .. GRAU .. "   " .. ENDE .. WEISS .. GF.geld(i.p) .. ENDE .. GRAU .. (quelle == "realm" and "  ·  üblich " or "  ·  üblich (Region) ") .. ENDE .. WEISS .. GF.geld(R or i.r) .. ENDE
-  end
-  tt:AddDoubleLine(kopf, (i.ahLive and (GRUEN .. "AH live" .. ENDE) or "") .. (i.u and (GRAU .. (i.ahLive and " · " or "") .. math.floor(i.u + 0.5) .. "/Tag" .. ENDE) or ""))
-  -- 2.54 Lernsystem: eigene Erfahrung mit diesem Item
+  -- Kopf: Gold Forever | Erfahrung bzw. Umsatz
   local erf = GF.erfahrung(id)
-  if erf then
-    local farbe = erf.bewaehrt and GRUEN or (erf.vorsicht and "|cfffb923c" or GRAU)
-    tt:AddLine(farbe .. (erf.bewaehrt and "Bewährt: " or (erf.vorsicht and "Vorsicht: " or "Erfahrung: ")) .. GF.erfahrungText(erf) .. ENDE)
+  local rechts
+  if erf and erf.bewaehrt then rechts = GRUEN .. "bewährt" .. ENDE .. GRAU .. " · " .. GF.erfahrungText(erf) .. ENDE
+  elseif erf and erf.vorsicht then rechts = ORANGE .. "Vorsicht" .. ENDE .. GRAU .. " · " .. GF.erfahrungText(erf) .. ENDE
+  else rechts = (i.u and (GRAU .. math.floor(i.u + 0.5) .. "/Tag" .. ENDE) or "") end
+  tt:AddDoubleLine(GOLD .. "Gold Forever" .. ENDE, rechts)
+  if not e then
+    if i.p then zeile(tt, "Jetzt", WEISS .. GF.geld(i.p) .. ENDE) end
+    if R then zeile(tt, "Üblich", GRAU .. GF.geld(R) .. ENDE) end
+    return
   end
-  if not e then return end
   if e.position then
-    local p, pl = e.position, e.plan
-    local gewinn, best = GF.erwartGewinn(p, pl)
-    tt:AddDoubleLine(GF.katIcon(e.art) .. " " .. e.farbe .. HAKEN .. ((e.position and e.position.hergestellt) and " Hergestellt: " or " Dein Einkauf: ") .. pl.kurz .. ENDE,
-      (gewinn >= 0 and GRUEN .. "+" or "|cfff87171-") .. GF.geld(math.abs(gewinn)) .. ENDE)
-    local info = p.n .. "× gekauft je " .. GF.geld(p.ek) .. (p.post > 0 and (" · " .. p.post .. " in der Post") or "")
-      .. ((best and best ~= gewinn) and (" · Bestfall " .. (best >= 0 and "+" or "-") .. GF.geld(math.abs(best))) or "")
-    tt:AddLine(GRAU .. info .. ENDE)
-    if pl.lang and not pl.lang:find("^halten, bis") and not pl.imAH then tt:AddLine(e.farbe .. pl.lang .. ENDE, 1, 1, 1, true) end
+    positionKompakt(tt, id, i, e)
+    GF.ttKompakt = id
+    if shift then
+      local p, pl = e.position, e.plan
+      if pl.lang then tt:AddLine(GRAU .. pl.lang .. ENDE, 1, 1, 1, true) end
+      if pl.art ~= "verk" then tt:AddLine(GRAU .. "Nach 7 Tagen verkauft Gold Forever mit kleinem Gewinn, falls im Plus – im Minus greift die Verlustbremse." .. ENDE, 1, 1, 1, true) end
+      if erf then tt:AddLine(GRAU .. "Erfahrung: " .. GF.erfahrungText(erf) .. ENDE) end
+      if (p.post or 0) > 0 then tt:AddLine(GRAU .. p.post .. " in der Post" .. ENDE) end
+    end
   else
     local wert = GF.stueckWert(e, i)
     if e.reset then
@@ -1230,6 +1277,8 @@ local function tooltipZeilen(tt, id)
       tt:AddLine((n > 0 and (GRUEN .. "Jetzt verkaufen – fällt meist bald zurück") or (GRAU .. "Nicht kaufen")) .. ENDE)
       return
     end
+    if i.p then zeile(tt, "Jetzt", WEISS .. GF.geld(i.p) .. ENDE .. ((R and R > 0) and (GRAU .. "   " .. pzText(i.p / R - 1) .. " zu üblich" .. ENDE) or "")) end
+    if R or i.r then zeile(tt, quelle == "realm" and "Üblich" or "Üblich (Region)", GRAU .. GF.geld(R or i.r) .. ENDE) end
     tt:AddDoubleLine(GF.katIcon(e.art) .. " " .. e.farbe .. e.titel .. "  ·  " .. e.grund .. ENDE,
       (n > 0 and wert) and (e.farbe .. "deine " .. n .. ": " .. GF.geld(wert * n) .. ENDE) or "")
     local teile = {}
@@ -1238,7 +1287,7 @@ local function tooltipZeilen(tt, id)
       local preis, dauer = GF.einstellen(i)
       if preis then teile[#teile + 1] = "Einstellen " .. GF.geld(preis) .. " · " .. dauer end
     end
-    if e.art == "verk" or e.art == "kauf" then
+    if shift and (e.art == "verk" or e.art == "kauf") then
       local zt = GF.zeitText(id, e.art); if zt then teile[#teile + 1] = zt end
     end
     if #teile > 0 then tt:AddLine(GRAU .. table.concat(teile, "  ·  ") .. ENDE, 1, 1, 1, true) end

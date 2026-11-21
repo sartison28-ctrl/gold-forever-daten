@@ -432,10 +432,13 @@ local function karteTooltip(self)
   self.hl:Show()
   if not self.itemId then return end
   GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetItemByID(self.itemId)
-  if self.hinweis then GameTooltip:AddLine(self.hinweis, F.gold[1], F.gold[2], F.gold[3], true) end
-  prognoseTooltip(self.prognose)
+  -- 2.62: gekaufte Ware hat oben schon die kompakte Tabelle + Prognose – Erklaertexte nur mit Shift
+  local shift = IsShiftKeyDown and IsShiftKeyDown()
+  local kompakt = GF.ttKompakt == self.itemId
+  if self.hinweis and (shift or not kompakt) then GameTooltip:AddLine(self.hinweis, F.gold[1], F.gold[2], F.gold[3], true) end
+  if shift or not kompakt then prognoseTooltip(self.prognose) end
   if not self.platzhalter then
-    GameTooltip:AddLine("Klick: im AH suchen" .. (self.weg and "  ·  Rechtsklick: ausblenden" or ""), F.grau[1], F.grau[2], F.grau[3])
+    GameTooltip:AddLine((kompakt and not shift and "Shift: Details  ·  " or "") .. "Klick: im AH suchen" .. (self.weg and "  ·  Rechtsklick: ausblenden" or ""), F.grau[1], F.grau[2], F.grau[3])
   end
   GameTooltip:Show()
 end

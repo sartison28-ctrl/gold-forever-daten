@@ -874,9 +874,12 @@ function GF.treppe(id, R, maxPreis, cap, budgetMax, Rsicher)
   return best
 end
 
+-- 2.62.1 (Wunsch Alex 21.11. 03:05): kein Kaufbudget mehr – „entscheide selber, was und wie viel ich einsetze“.
+-- Grenze ist nur das Gold in der Tasche (jeder Vorschlag fuer sich, keine Aufteilung). Mengen bleiben durch den Markt
+-- begrenzt (5 % der Tagesverkaeufe, Preistreppe), das ist Risikoschutz, kein Budget. Bis zu 10 Vorschlaege.
 function GF.budgetPlan()
   local gold = GetMoney and GetMoney() or 0
-  local budget = math.floor(gold * (D().budget or 0.7))
+  local budget = gold
   local kand, grund = {}, {}
   for id in pairs(GF.alleIds(true)) do
     local i = GF.info(id)
@@ -909,7 +912,7 @@ function GF.budgetPlan()
           if verfuegbar then markt = math.min(markt, verfuegbar) end
           local k = { id = id, i = i, ziel = ziel, stueck = stueck, markt = markt, maxKauf = maxKauf, schon = pos and pos.n or 0 }
           -- 2.57.1: Preistreppe – mehr Menge, wenn der Wiederverkauf danach hoeher liegt (Deckel: 1 Tagesumsatz)
-          local T = GF.treppe(id, R, maxKauf, math.max(markt, math.floor(absatz)) - (pos and pos.n or 0), math.floor(budget * 0.3), ziel)
+          local T = GF.treppe(id, R, maxKauf, math.max(markt, math.floor(absatz)) - (pos and pos.n or 0), budget, ziel)
           if T and T.n >= 1 and T.gewinn > stueck * markt then
             k.markt, k.stueck, k.maxKauf, k.ziel, k.treppe = T.n, T.gewinn / T.n, T.max, T.neu, T
           end
@@ -920,18 +923,17 @@ function GF.budgetPlan()
   end
   -- Erwarteter Gewinn = moeglicher Gewinn x Erholungsquote (zuverlaessige Items zuerst)
   -- 2.54: erwarteter Gewinn x gelernte Trefferquote (eigenes Item, sonst Warengruppe, sonst Erholung)
-  local function wert(k) return k.stueck * math.min(k.markt, math.floor(budget * 0.3 / k.i.p) - (k.schon or 0)) * (GF.trefferQuote(k.id, k.i)) end
+  local function wert(k) return k.stueck * math.min(k.markt, math.floor(budget / k.i.p)) * (GF.trefferQuote(k.id, k.i)) end
   table.sort(kand, function(a, b) return wert(a) > wert(b) end)
-  local rest, deals = budget, {}
+  local deals = {}
   for _, k in ipairs(kand) do
-    local menge = math.min(k.markt, math.floor(budget * 0.3 / k.i.p) - (k.schon or 0), math.floor(rest / k.i.p))
+    local menge = math.min(k.markt, math.floor(budget / k.i.p))
     -- Mindestgewinn 5s je Vorschlag: Kleinkram (ein paar Silber) lohnt den Aufwand nicht
-    if menge < 1 then grund[k.id] = "Kaufbudget reicht nicht"
-    elseif menge * k.stueck < 500 then grund[k.id] = "lohnt nicht: Gewinn " .. GF.geld(menge * k.stueck) .. " < 5s bei deinem Budget"
-    elseif #deals >= 5 or rest < 100 then grund[k.id] = "Plan ist voll – andere Käufe bringen mehr"
+    if menge < 1 then grund[k.id] = "nicht genug Gold"
+    elseif menge * k.stueck < 500 then grund[k.id] = "lohnt nicht: Gewinn " .. GF.geld(menge * k.stueck) .. " < 5s"
+    elseif #deals >= 10 then grund[k.id] = "Plan ist voll – andere Käufe bringen mehr"
     else
       k.menge = menge; k.gewinn = math.floor(menge * k.stueck); deals[#deals + 1] = k
-      rest = rest - menge * k.i.p
     end
   end
   return { gold = gold, budget = budget, deals = deals, grund = grund }
@@ -942,7 +944,7 @@ end
 local DIAG = {
   { "nicht günstig", "TSM-Gegenprobe" }, { "erholt sich", "erholt sich selten" }, { "geflutet", "Markt geflutet" },
   { "stürzt", "Preis stürzt" }, { "fällt", "Preis fällt" }, { "wenig Handel", "wenig Handel" }, { "kaum Handel", "wenig Handel" },
-  { "Gewinn je Stück", "Gewinn je Stück zu klein" }, { "lohnt nicht", "unter 5s Gewinn" }, { "Budget", "Budget" },
+  { "Gewinn je Stück", "Gewinn je Stück zu klein" }, { "lohnt nicht", "unter 5s Gewinn" }, { "nicht genug Gold", "nicht genug Gold" },
   { "eingebrochen", "Markt eingebrochen" }, { "Vollscan", "erst AH-Prüfung" }, { "nichts bis", "im AH nichts so billig" }, { "genug gekauft", "schon genug gekauft" },
   { "Plan ist voll", "Plan voll (max. 5)" }, { "Händler", "Händlerware" }, { "endet in", "Event endet" }, { "Raid", "Raid-Ware" },
   { "Preissprung", "Preissprung" }, { "nicht handelbar", "nicht handelbar" },
@@ -950,7 +952,7 @@ local DIAG = {
   { "zahlt ", "Händler zahlt mehr" }, { "Kaufgrenze erst", "noch nicht tief genug" }, { "wenig Handel", "wenig Handel" },
   { "zu wenig Umsatz", "wenig Handel" }, { "verkauft sich selten", "verkauft sich selten" }, { "schwank", "schwankt zu stark" },
   { "Item-Infos laden", "Item-Infos laden noch" }, { "gerade unter", "eigene Ware – halten" }, { "Bedarf noch offen", "neu in Forever" },
-  { "Preis normal", "Preis normal" }, { "nicht im Plan", "Kauf – Plan/Budget voll" },
+  { "Preis normal", "Preis normal" }, { "nicht im Plan", "Kauf – Plan voll" },
 }
 function GF.kaufDiagnose()
   local P = (GF.ah and GF.ah.plan) or GF.budgetPlan()
@@ -1044,7 +1046,7 @@ end
 -- erwarteter Gewinn bis zum Raid = (Ø × 0,95 − Preis) × Menge.
 function GF.raidPlan()
   local gold = GetMoney and GetMoney() or 0
-  local budget = math.floor(gold * (D().budget or 0.7) * 0.5)
+  local budget = gold -- 2.62.1: kein Budget-Anteil mehr
   local kand, grund = {}, {}
   for id, rk in pairs(D().raid or {}) do
     id = tonumber(id)
@@ -1061,16 +1063,15 @@ function GF.raidPlan()
     elseif R then grund[id] = "Preis nicht unter üblich (" .. GF.geld(R) .. ")"
     end
   end
-  local function wert(k) return k.stueck * math.min(k.markt, math.floor(budget * 0.3 / k.i.p)) end
+  local function wert(k) return k.stueck * math.min(k.markt, math.floor(budget / k.i.p)) end
   table.sort(kand, function(a, b) return wert(a) > wert(b) end)
-  local rest, plan = budget, {}
+  local plan = {}
   for _, k in ipairs(kand) do
-    local menge = math.min(k.markt, math.floor(budget * 0.3 / k.i.p), math.floor(rest / k.i.p))
-    if #plan >= 5 then grund[k.id] = "Raid-Vorrat ist voll – andere Käufe bringen mehr"
-    elseif menge < 1 then grund[k.id] = "Raid-Budget reicht nicht"
+    local menge = math.min(k.markt, math.floor(budget / k.i.p))
+    if #plan >= 10 then grund[k.id] = "Raid-Vorrat ist voll – andere Käufe bringen mehr"
+    elseif menge < 1 then grund[k.id] = "nicht genug Gold"
     else
       k.menge = menge; k.gewinn = menge * k.stueck; plan[#plan + 1] = k
-      rest = rest - menge * k.i.p
     end
   end
   return { budget = budget, plan = plan, grund = grund }
@@ -2984,14 +2985,15 @@ local function liveItem(itemKey)
         -- GF ebenso); die Teilung aus 2.58.4 war falsch. Gesamtpreis liefern nur „Meine Auktionen“ und der Vollscan.
         local menge = math.max(1, x.quantity or 1)
         if x.containsOwnerItem then eigen = eigen or b
-        else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = b, q = menge } end end
+        else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = b, q = menge, a = (menge == 1) and x.auctionID or nil } end end
       end
     end
     -- 2.58.4: nach Stueckpreis sortieren (Blizzard sortiert Einzel-Auktionen evtl. nach Stapelpreis)
     table.sort(st, function(x1, x2) return x1.p < x2.p end)
     if st[1] then p = st[1].p end
     GoldForeverDB.einzelItem = GoldForeverDB.einzelItem or {}; GoldForeverDB.einzelItem[itemKey.itemID] = true
-    GF.live[itemKey.itemID] = { p = p, t = time(), st = st, eigen = eigen }
+    GF.live[itemKey.itemID] = { p = p, t = time(), st = st, eigen = eigen, einzel = true }
+    if GF.sniperLeise then return end
     GF.planNeu()
     if GF.aktualisieren then pcall(GF.aktualisieren) end
   end
@@ -3222,17 +3224,15 @@ function GF.sniperBewerten(id)
   local grenze = GF.sniperGrenze(id, i, R, umsatz)
   local halb = math.max(1, math.floor(umsatz * 0.5))
   local cap = math.max(3, math.floor(umsatz * 0.10))
+  -- 2.62.1 (Wunsch Alex 21.11. 03:05: „wenn ich snipen will, snipe ich bis ich 0g habe“): kein Tages-/Anteils-Budget
+  -- mehr – Grenze ist nur das Gold in der Tasche. Die Mengenregeln (½ Tagesumsatz, Billig-Deckel) bleiben als Risikoschutz.
   local gold = GetMoney and GetMoney() or 0
-  local tagesBudget = math.floor(gold * (D().budget or 0.7) * 0.30)
-  local db = snDB(); db.ausgaben = db.ausgaben or {}
-  local schon = db.ausgaben[date("%Y-%m-%d")] or 0
-  local budget = math.min(math.floor(gold * (D().budget or 0.7) * 0.30), math.max(0, tagesBudget - schon))
+  local budget = gold
   -- 2.58.3: sicher rechnen mit dem echten Verkaufspreis; "Knaller" (Preis <= 50 % davon) bremst die Menge nicht
   local Rv = GF.verkaufsRef(id, R)
   local billigsterP = l.st[1] and l.st[1].p or math.huge
   local knaller = billigsterP <= Rv * 0.5
-  if knaller then budget = math.floor(gold * (D().budget or 0.7) * 0.30) end
-  if budget < 100 then return snNein(id, "Tagesbudget Sniper aufgebraucht") end
+  if budget < 100 then return snNein(id, "kein Gold") end
   local n, kosten, maxP, naechster = 0, 0, 0, nil
   for _, x in ipairs(l.st) do
     if x.p <= Rv * grenze and n < cap then
@@ -3259,7 +3259,20 @@ function GF.sniperBewerten(id)
   -- 2.61: neue Zone (weniger als 15 % unter ueblich) nur mit mind. 10s Gewinn nach Gebuehr – sonst lohnt der Klick nicht
   if maxP > Rv * 0.85 and gewinn < SN_MIN_LEINE then return snNein(id, "12-%-Zone: Gewinn < 10s", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
   frisch[#frisch + 1] = time()
-  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(),
+  -- 2.62.1 (Wunsch Alex): Treffer farblich einordnen – gruen sicher / blau ok / orange Risiko
+  local erf = GF.erfahrung(id)
+  local tage = umsatz > 0 and n / umsatz or 99
+  local risikoGrund
+  local einzel = GoldForeverDB.einzelItem and GoldForeverDB.einzelItem[id]
+  if erf and erf.vorsicht then risikoGrund = "schlechte Erfahrung"
+  elseif umsatz < 100 then risikoGrund = "wenig Umsatz (" .. math.floor(umsatz + 0.5) .. "/Tag)"
+  elseif i.nurRealm then risikoGrund = "wenig Daten (nur Realm)"
+  elseif einzel then risikoGrund = "Einzelware – Preis schwankt"
+  elseif GF.faelltTage(id) then risikoGrund = "Preis fällt"
+  elseif tage > 0.5 then risikoGrund = "Menge > ½ Tag Umsatz"
+  elseif Rv < R * 0.85 then risikoGrund = "verkauft meist unter üblich" end
+  local risiko = risikoGrund and "risiko" or (((erf and erf.bewaehrt) or (umsatz >= 200 and tage <= 0.25)) and "sicher" or "ok")
+  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel,
     abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
 end
 
@@ -3295,6 +3308,8 @@ function GF.sniperZeigen()
   if t then
     snF.knopf:Show()
     -- 2.58.2 (Wunsch Alex): übersichtlich – Icon, Menge = Gesamtpreis, Gewinn gross, Details in einer Zeile
+    local fb = ({ sicher = { 0.29, 0.87, 0.5 }, ok = { 0.22, 0.74, 0.97 }, risiko = { 0.98, 0.57, 0.24 } })[t.risiko or "ok"]
+    snF.knopf.farbe = fb; snF.knopf.bg:SetColorTexture(fb[1], fb[2], fb[3], 0.45)
     snF.icon:SetTexture((C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(t.id)) or (GetItemIcon and GetItemIcon(t.id)) or 134400); snF.icon:Show()
     local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
     snF.name:SetText(name); snF.name:Show()
@@ -3303,11 +3318,12 @@ function GF.sniperZeigen()
     elseif k and k.id == t.id then
       snF.knopf.t:SetText("Preis wird geholt …")
     else
-      snF.knopf.t:SetText((t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. "KAUFEN  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. ENDE .. "   [" .. snDB().taste .. "]")
+      local RF = ({ sicher = GRUEN .. "SICHER  ", ok = BLAU .. "OK  ", risiko = ORANGE .. "RISIKO  " })[t.risiko or "ok"] .. ENDE
+      snF.knopf.t:SetText(RF .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. ENDE .. "   [" .. snDB().taste .. "]")
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
     snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
-      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. " · Rechtsklick: überspringen" .. ENDE)
+      GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
   else
     snF.knopf:Hide(); snBindung(false)
@@ -3335,6 +3351,32 @@ local function snKlick(self, knopf)
     S.skip = S.skip or {}; S.skip[t.id] = time(); snLog(t, "übersprungen")
     if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
     S.treffer = nil; GF.sniperZeigen(); return
+  end
+  -- 2.62.1: Einzel-Auktionen – je Klick eine Auktion per Sofortkauf (PlaceBid mit Sofortkaufpreis)
+  if t.einzel then
+    local l = GF.live[t.id]
+    local x, idx
+    for k2, y in ipairs((l and l.st) or {}) do if y.a and y.p <= t.max then x, idx = y, k2; break end end
+    local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
+    if not x then
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. name .. ": nur Stapel-Auktionen – bitte direkt im AH kaufen (Suche nach dem Namen).")
+      snLog(t, "übersprungen"); S.treffer = nil; GF.sniperZeigen(); return
+    end
+    if GetMoney and x.p > GetMoney() then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " nicht genug Gold." .. ENDE); return end
+    GF.unterbieterMerk = GF.unterbieterMerk or {}
+    GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true }
+    local ok, err = pcall(C_AuctionHouse.PlaceBid, x.a, x.p)
+    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil; GF.sniperZeigen(); return end
+    table.remove(l.st, idx); if l.st[1] then l.p = l.st[1].p end
+    t.gekauftN = (t.gekauftN or 0) + 1
+    local d = snDB(); local tag = date("%Y-%m-%d")
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " 1× " .. name .. " gekauft für " .. GF.geld(x.p) .. " (" .. t.gekauftN .. "/" .. t.n .. ") – Wiederverkauf je " .. GF.geld(t.neu) .. ".")
+    if t.gekauftN >= t.n then
+      d.treffer[tag] = (d.treffer[tag] or 0) + 1; t.bezahlt = x.p; snLog(t, "gekauft")
+      S.zuletzt = { id = t.id, n = t.gekauftN, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0 }
+      S.treffer = nil
+    end
+    GF.sniperZeigen(); return
   end
   local k = GF.kaufLauf
   if k and k.id == t.id and k.unit then
@@ -3376,8 +3418,8 @@ local function snBauen()
   b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(); b.bg:SetColorTexture(0.65, 0.45, 0.95, 0.55)
   b.t = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight"); b.t:SetPoint("CENTER")
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp"); b:SetScript("OnClick", snKlick)
-  b:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.75, 0.55, 1, 0.75) end)
-  b:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.65, 0.45, 0.95, 0.55) end)
+  b:SetScript("OnEnter", function(self) local c = self.farbe or { 0.65, 0.45, 0.95 }; self.bg:SetColorTexture(c[1], c[2], c[3], 0.7) end)
+  b:SetScript("OnLeave", function(self) local c = self.farbe or { 0.65, 0.45, 0.95 }; self.bg:SetColorTexture(c[1], c[2], c[3], 0.45) end)
   b:Hide(); snF.knopf = b
   -- 2.61.2: „Warum nicht?“ oben rechts
   snF.warum = CreateFrame("Button", nil, snF); snF.warum:SetSize(80, 16); snF.warum:SetPoint("TOPRIGHT", -6, -3)
@@ -3765,6 +3807,12 @@ f:SetScript("OnEvent", function(_, ev, ...)
     pcall(liveCommodity, ...); pcall(scanCommodity, ...); pcall(GF.zieleCheck); pcall(pruefErgebnis, ...); return
   end
   if ev == "ITEM_SEARCH_RESULTS_UPDATED" then
+    -- 2.62.1 (Befund 62): Sniper wertet auch Einzel-Auktionen aus (vorher „Suche ohne Antwort“)
+    local key = ...
+    local kid = type(key) == "table" and key.itemID or tonumber(key)
+    if GF.sniper and GF.sniper.an and kid and GF.sniper.suche == kid then
+      GF.sniperLeise = true; pcall(liveItem, ...); GF.sniperLeise = nil; pcall(GF.sniperErgebnis, kid); return
+    end
     pcall(liveItem, ...); pcall(scanItem, ...); pcall(GF.zieleCheck)
     local key = ...; pcall(pruefErgebnis, type(key) == "table" and key.itemID or key); return
   end

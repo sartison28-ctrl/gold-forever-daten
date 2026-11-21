@@ -1795,7 +1795,10 @@ function GF.aktualisieren()
   -- Kopf
   local ein, aus, prof = GF.handelHeute()
   fenster.k.gold.wert:SetText(H.hell .. betragKurz(GetMoney()) .. ENDE)
-  fenster.k.budget.wert:SetText(H.lila .. betragKurz(s.budget or GF.budgetPlan().budget) .. ENDE)
+  -- 2.62.1: statt Kaufbudget der Wert deiner Ware (Halten + im AH, nach Gebühr) – Gold + Ware = Vermögen
+  local ware = (s.haltWert or 0) + (s.ahWert or 0)
+  fenster.k.budget.wert:SetText(H.lila .. betragKurz(ware) .. ENDE)
+  fenster.k.budget.tipp = "Wert deiner gekauften Ware: Halten " .. GF.geld(s.haltWert or 0) .. " + im AH " .. GF.geld(s.ahWert or 0) .. " (nach Gebühr). Vermögen mit Gold: " .. GF.geld(ware + (GetMoney and GetMoney() or 0)) .. "."
   fenster.k.ein.wert:SetText(ein > 0 and (H.gruen .. betragKurz(ein) .. ENDE) or (H.grau .. "—" .. ENDE))
   fenster.k.profit.wert:SetText((ein > 0 or aus > 0) and plusMinusKurz(prof) or (H.grau .. "—" .. ENDE))
   fenster.k.profit.tipp = "Einnahmen " .. GF.geld(ein) .. " minus Einkäufe " .. GF.geld(aus) .. " (heute). Gold seit Tagesbeginn: " .. GF.geld(GF.tagesbilanz() or 0) .. ". Klick: Bilanz."
@@ -2201,7 +2204,7 @@ local function baue()
   fenster.k = {}
   local KZ = {
     { "gold", "Gold", "Gold auf diesem Charakter." },
-    { "budget", "Kaufbudget", "So viel darf Gold Forever für Einkäufe einplanen (Anteil deines Golds)." },
+    { "budget", "Ware", "Wert deiner gekauften Ware (Halten + im AH)." },
     { "ein", "Einnahmen heute", "Erlöse aus AH-Verkäufen heute (aus der Post, nach Gebühr)." },
     { "profit", "Profit heute", "Einnahmen minus Einkäufe heute. Klick: Bilanz." },
   }

@@ -2326,7 +2326,10 @@ function GF.kaufPreisDa(unit, total)
     pcall(C_AuctionHouse.CancelCommoditiesPurchase)
     GF.kaufLauf = nil
     if GF.sniper and GF.sniper.treffer and GF.sniper.treffer.id == k.id then
-      if GF.sniperLog then GF.sniperLog(GF.sniper.treffer, "zu teuer") end
+      -- 2.65: Preis ist hoeher, weil das billige Angebot schon weg ist = „zu spät“
+      if GF.sniperLog then GF.sniperLog(GF.sniper.treffer, "zu spät") end
+      local D2 = GF.sniperDiag and GF.sniperDiag(); if D2 then D2.g["zu spät – schon weg"] = (D2.g["zu spät – schon weg"] or 0) + 1 end
+      GF.sniper.zuspaet = { name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(k.id)) or ("Item " .. k.id), t = time() }
       GF.sniper.treffer = nil
     end
     print(GOLD .. "Gold Forever:" .. ENDE .. " Kauf abgebrochen – im AH kostet es jetzt " .. GF.geld(unit) .. " je Stück, Höchstpreis " .. GF.geld(k.max) .. ". Das Tief ist vorbei.")
@@ -3119,7 +3122,7 @@ local function liveItem(itemKey)
         -- GF ebenso); die Teilung aus 2.58.4 war falsch. Gesamtpreis liefern nur „Meine Auktionen“ und der Vollscan.
         local menge = math.max(1, x.quantity or 1)
         if x.containsOwnerItem then eigen = eigen or b
-        else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = b, q = menge, a = (menge == 1) and x.auctionID or nil } end end
+        else p = p or b; if x.buyoutAmount and #st < 30 then st[#st + 1] = { p = b, q = menge, a = x.auctionID, roh = x.buyoutAmount } end end -- 2.65: auch Stapel (Kauf nur ganz)
       end
     end
     -- 2.58.4: nach Stueckpreis sortieren (Blizzard sortiert Einzel-Auktionen evtl. nach Stapelpreis)
@@ -3325,6 +3328,7 @@ local function snNein(id, grund, x)
   local f = D2.faelle
   f[#f + 1] = { t = time(), id = id, g = grund, p = x.p, R = x.R, n = x.n, gewinn = x.gewinn }
   while #f > 60 do table.remove(f, 1) end
+  GF.sniper.letzterGrund = grund
   return nil
 end
 -- 2.64.1 (Wunsch Alex 21.11. 17:40: Sniper-Live-Daten fuer spaetere Kaufen-Vorschlaege nutzen):
@@ -3364,6 +3368,28 @@ function GF.eigenerVK(id)
   end
   if n >= 5 then return math.floor(g / n), n end
 end
+-- 2.65 (Analyse 21.11. abends: 1360 von 2947 Detail-Suchen „nicht günstig genug“): Vorfilter der Durchsuche und
+-- Detail-Bewertung rechnen jetzt mit DEMSELBEN vorsichtigen Umsatz und Verkaufspreis (inkl. eigenem Verkaufspreis)
+function GF.sniperUmsatz(id, i)
+  local rl = GF.realm(id)
+  local umsatz = i.u or 0
+  if rl and rl.vt then umsatz = math.min(umsatz > 0 and umsatz or rl.vt, rl.vt) end
+  local tsmU = tsm("DBRegionSoldPerDay*1000", id)
+  if tsmU then umsatz = math.min(umsatz, tsmU / 1000) end
+  return umsatz, rl
+end
+function GF.sniperVerkauf(id, R)
+  local Rv = GF.verkaufsRef(id, R)
+  local eVK = GF.eigenerVK(id)
+  if eVK and eVK < Rv then return eVK, eVK end
+  return Rv
+end
+-- Preis-Gruende: bleibt das guenstigste Angebot gleich, aendert eine neue Suche nichts (Nein-Merker, 5 Min.)
+local SN_PREISGRUND = { ["nicht günstig genug"] = true, ["kein Gewinn (gleich billige Reste / nächstes Angebot zu nah)"] = true, ["Gewinn < 3s"] = true,
+  ["Gewinn < 10 % vom Einsatz"] = true, ["12-%-Zone: Gewinn < 10s"] = true, ["Menge zu hoch"] = true }
+-- feste Gruende: aendern sich nicht in Minuten (30 Min. nicht mehr einzeln suchen)
+local SN_FESTGRUND = { ["nicht handelbar"] = true, ["Händlerware / keine Infos"] = true, ["Preis fällt stark"] = true, ["Markt eingebrochen"] = true,
+  ["kein Referenzpreis"] = true, ["Umsatz < 50/Tag"] = true }
 function GF.sniperBewerten(id)
   id = tonumber(id)
   local l = GF.live[id]; if not (l and l.st and #l.st > 0 and not l.voll) then return snNein(id, "schon weg / kein Angebot") end
@@ -3394,11 +3420,7 @@ function GF.sniperBewerten(id)
   end
   -- 2.58.2: Umsatz vorsichtig = kleinerer Wert aus TSM-Region und Realm; Menge hoechstens ½ Tagesumsatz,
   -- Billig-Items (< 1s) hoechstens 200 Stueck; Gesamt-Budget fuer Snipes je Tag = 30 % des Kaufbudgets
-  local rl = GF.realm(id)
-  local umsatz = i.u or 0
-  if rl and rl.vt then umsatz = math.min(umsatz > 0 and umsatz or rl.vt, rl.vt) end
-  local tsmU = tsm("DBRegionSoldPerDay*1000", id)
-  if tsmU then umsatz = math.min(umsatz, tsmU / 1000) end
+  local umsatz, rl = GF.sniperUmsatz(id, i)
   local grenze = GF.sniperGrenze(id, i, R, umsatz)
   local halb = math.max(1, math.floor(umsatz * 0.5))
   local cap = math.max(3, math.floor(umsatz * 0.10))
@@ -3407,11 +3429,9 @@ function GF.sniperBewerten(id)
   local gold = GetMoney and GetMoney() or 0
   local budget = gold
   -- 2.58.3: sicher rechnen mit dem echten Verkaufspreis; "Knaller" (Preis <= 50 % davon) bremst die Menge nicht
-  local Rv = GF.verkaufsRef(id, R)
   -- 2.64: hast du das Item zuletzt billiger verkauft, rechnet der Sniper mit deinem echten Verkaufspreis
-  local eVK = GF.eigenerVK(id)
-  local eigenVKgenutzt = false
-  if eVK and eVK < Rv then Rv = eVK; eigenVKgenutzt = true end
+  local Rv, eVK = GF.sniperVerkauf(id, R)
+  local eigenVKgenutzt = eVK ~= nil
   local billigsterP = l.st[1] and l.st[1].p or math.huge
   local knaller = billigsterP <= Rv * 0.5
   if budget < 100 then return snNein(id, "kein Gold") end
@@ -3420,6 +3440,8 @@ function GF.sniperBewerten(id)
     if x.p <= Rv * grenze and n < cap then
       local q = math.min(x.q or 1, cap - n)
       if kosten + q * x.p > budget then q = math.floor((budget - kosten) / x.p) end
+      -- 2.65: Einzel-Auktionen (auch Stapel) lassen sich nur ganz kaufen
+      if l.einzel and q < (x.q or 1) then naechster = x.p; break end
       if q <= 0 then break end
       n = n + q; kosten = kosten + q * x.p; maxP = math.max(maxP, x.p)
       if q < (x.q or 1) then naechster = x.p; break end
@@ -3437,7 +3459,7 @@ function GF.sniperBewerten(id)
   if R < 100 then deckel = math.min(deckel, 200) end
   if knaller then deckel = math.max(deckel, math.floor(umsatz) - schonVorher) end -- Knaller: bis 1 Tagesumsatz, kein Billig-Deckel
   if deckel < 1 then return snNein(id, "du hast schon genug (" .. schonVorher .. ")") end
-  local T = GF.treppe(id, R, math.floor(Rv * grenze), deckel, budget, Rv)
+  local T = (not l.einzel) and GF.treppe(id, R, math.floor(Rv * grenze), deckel, budget, Rv) or nil
   if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
   if n > deckel then return snNein(id, "Menge zu hoch", { p = maxP, R = Rv, n = n }) end
   if gewinn < SN_MIN then return snNein(id, gewinn <= 0 and "kein Gewinn (gleich billige Reste / nächstes Angebot zu nah)" or "Gewinn < 3s", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
@@ -3567,21 +3589,24 @@ local function snKlick(self, knopf)
   if t.einzel then
     local l = GF.live[t.id]
     local x, idx
-    for k2, y in ipairs((l and l.st) or {}) do if y.a and y.p <= t.max then x, idx = y, k2; break end end
+    for k2, y in ipairs((l and l.st) or {}) do if y.a and y.p <= t.max and (t.gekauftN or 0) + (y.q or 1) <= t.n then x, idx = y, k2; break end end
     local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
     if not x then
-      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. name .. ": nur Stapel-Auktionen – bitte direkt im AH kaufen (Suche nach dem Namen).")
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. name .. ": Angebot nicht mehr da.")
       snLog(t, "übersprungen"); S.treffer = nil; GF.sniperZeigen(); return
     end
-    if GetMoney and x.p > GetMoney() then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " nicht genug Gold." .. ENDE); return end
+    -- 2.65: Stapel-Auktion = ganzer Stapel mit einem Klick. Betrag genau so, wie Blizzard ihn liefert (wie der AH-Kaufknopf)
+    local q = x.q or 1
+    local betrag = (q > 1 and x.roh) or x.p
+    if GetMoney and math.max(betrag, x.p * q) > GetMoney() then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " nicht genug Gold." .. ENDE); return end
     GF.unterbieterMerk = GF.unterbieterMerk or {}
     GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true }
-    local ok, err = pcall(C_AuctionHouse.PlaceBid, x.a, x.p)
+    local ok, err = pcall(C_AuctionHouse.PlaceBid, x.a, betrag)
     if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil; GF.sniperZeigen(); return end
     table.remove(l.st, idx); if l.st[1] then l.p = l.st[1].p end
-    t.gekauftN = (t.gekauftN or 0) + 1
+    t.gekauftN = (t.gekauftN or 0) + q
     local d = snDB(); local tag = date("%Y-%m-%d")
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " 1× " .. name .. " gekauft für " .. GF.geld(x.p) .. " (" .. t.gekauftN .. "/" .. t.n .. ") – Wiederverkauf je " .. GF.geld(t.neu) .. ".")
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. q .. "× " .. name .. " gekauft für " .. GF.geld(x.p * q) .. (q > 1 and (" (je " .. GF.geld(x.p) .. ")") or "") .. " (" .. t.gekauftN .. "/" .. t.n .. ") – Wiederverkauf je " .. GF.geld(t.neu) .. ".")
     if t.gekauftN >= t.n then
       d.treffer[tag] = (d.treffer[tag] or 0) + 1; t.bezahlt = x.p; snLog(t, "gekauft")
       S.zuletzt = { id = t.id, n = t.gekauftN, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0 }
@@ -3591,7 +3616,8 @@ local function snKlick(self, knopf)
   end
   local k = GF.kaufLauf
   -- 2.64.3: 1. Druck startet, 2. Druck bestaetigt. Blau/orange: Bestaetigen erst 1 Sek. nach dem Preis (kein Doppeldruck)
-  if k and k.id == t.id and k.unit and t.risiko ~= "sicher" and time() - (k.preisT or 0) < 1 then
+  -- 2.65 (Wunsch Alex 21.11.): Sperre nur noch bei Orange, Blau bestaetigt sofort
+  if k and k.id == t.id and k.unit and t.risiko == "risiko" and time() - (k.preisT or 0) < 1 then
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Risiko-Treffer – bitte kurz prüfen und dann bestätigen." .. ENDE); return
   end
   if k and k.id == t.id and k.unit then
@@ -3723,8 +3749,21 @@ local function snBrowse()
   -- Durchgang nicht gesehen hat (andere Warenklasse/kein Angebot) – gesehene Items bewertet die Durchsuche selbst
   S.queue = S.queue or {}
   local gesehen = S.gesehen or {}
-  for _, id in ipairs(GF.sniperListe()) do if not gesehen[id] then S.queue[#S.queue + 1] = id end end
+  S.fest = S.fest or {}
+  for _, id in ipairs(GF.sniperListe()) do
+    if not gesehen[id] and not (S.fest[id] and time() - S.fest[id] < 1800) then S.queue[#S.queue + 1] = id end
+  end
   S.gesehen = {}
+end
+-- 2.65: „heiße“ Items = in den letzten 7 Tagen per Sniper gekauft (Liste je 5 Min. neu)
+function GF.sniperHeiss(id)
+  local S = GF.sniper
+  if not S.heiss or time() - (S.heissT or 0) > 300 then
+    S.heiss, S.heissT = {}, time()
+    local ab = time() - 7 * 86400
+    for _, e in ipairs(snDB().log or {}) do if e.aus == "gekauft" and (e.t or 0) >= ab then S.heiss[e.id] = true end end
+  end
+  return S.heiss[id]
 end
 -- Browse-Ergebnisse auswerten (AUCTION_HOUSE_BROWSE_RESULTS_UPDATED / _ADDED)
 function GF.sniperBrowse()
@@ -3739,7 +3778,13 @@ function GF.sniperBrowse()
     local id = r and r.itemKey and r.itemKey.itemID
     if id then S.gesehen = S.gesehen or {}; S.gesehen[id] = true end
     if id and ids[id] and r.minPrice then pcall(GF.marktEreignis, id, r.minPrice, r.totalQuantity) end
-    if id and ids[id] and r.minPrice and not drin[id] and not (S.geprueft[id] and time() - S.geprueft[id] < 60)
+    -- 2.65: schon geprueft (60 s) bzw. Nein-Merker (5 Min.) gilt nur, solange KEIN billigeres Angebot da ist –
+    -- ein neues billigeres Angebot (z. B. derselbe Verkaeufer stellt nach) wird sofort geprueft
+    local nm = id and S.nein and S.nein[id]
+    local billiger = nm and r.minPrice and r.minPrice < nm.p
+    local unveraendert = nm and not billiger and time() - nm.t < 300
+    if unveraendert then local D2 = GF.sniperDiag(); D2.gespart = (D2.gespart or 0) + 1 end
+    if id and ids[id] and r.minPrice and not drin[id] and not unveraendert and (billiger or not (S.geprueft[id] and time() - S.geprueft[id] < 60))
       and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) and not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
       local i = GF.info(id)
       -- 2.61.2 Diagnose: guenstige Angebote (>= 12 % unter ueblich), die schon hier aussortiert werden – je Item und Tag einmal
@@ -3754,14 +3799,21 @@ function GF.sniperBrowse()
       elseif GF.sniperFaellt(id, i.u) then grund = "Preis fällt stark"
       -- 2.62.2 (Analyse 21.11.: 795× „nicht günstig genug“ in der Detail-Suche): mit demselben echten
       -- Verkaufspreis vorsortieren wie die Detail-Bewertung -> weniger nutzlose Detail-Suchen, schnellere Durchgänge
-      elseif r.minPrice > GF.verkaufsRef(id, R) * GF.sniperGrenze(id, i, R) then grund = "zu teuer"
-      elseif GF.verkaufsRef(id, R) * 0.95 - r.minPrice < 30 then grund = "Gewinn je Stück < 30c" end
+      end
+      local Rv, U
+      if not grund then
+        U = GF.sniperUmsatz(id, i); Rv = GF.sniperVerkauf(id, R)
+        if r.minPrice > Rv * GF.sniperGrenze(id, i, R, U) then grund = "zu teuer"
+        elseif Rv * 0.95 - r.minPrice < 30 then grund = "Gewinn je Stück < 30c" end
+      end
       if not grund then
         table.insert(S.queue, 1, id); drin[id] = true
         S.kandidaten = (S.kandidaten or 0) + 1
         S.fundZeit = S.fundZeit or {}; S.fundZeit[id] = time()
         S.queueWert = S.queueWert or {}
-        S.queueWert[id] = (GF.verkaufsRef(id, R) * 0.95 - r.minPrice) * math.min(200, math.max(1, (i.u or 0) * 0.25))
+        S.fundP = S.fundP or {}; S.fundP[id] = r.minPrice
+        -- 2.65: Items, die zuletzt gekauft wurden (bewaehrte Treffer), zuerst pruefen
+        S.queueWert[id] = (Rv * 0.95 - r.minPrice) * math.min(200, math.max(1, U * 0.25)) * (GF.sniperHeiss(id) and 2 or 1)
       elseif grund ~= "zu teuer" and R and r.minPrice <= R * 0.88 then
         local D2 = GF.sniperDiag(); D2.browseIds = D2.browseIds or {}
         if not D2.browseIds[id] then D2.browseIds[id] = grund; D2.browse[grund] = (D2.browse[grund] or 0) + 1 end
@@ -3788,7 +3840,7 @@ local function snSchritt()
   local S = GF.sniper
   if not (S.an and GF.ah) then return end
   if S.treffer or snPause() then GF.sniperZeigen(); return end
-  if S.suche and time() - (S.sucheT or 0) < 3 then return end
+  if S.suche and time() - (S.sucheT or 0) < 2 then return end -- 2.65: 3 -> 2 Sek. (Antwort kommt sonst < 1 Sek.)
   if S.suche then local D2 = GF.sniperDiag(); D2.g["Suche ohne Antwort"] = (D2.g["Suche ohne Antwort"] or 0) + 1 end
   S.suche = nil
   -- AH-Sperre von Blizzard beachten (sonst gehen Anfragen verloren)
@@ -3801,7 +3853,7 @@ local function snSchritt()
     -- keine Kandidaten offen: Durchsuche fortsetzen bzw. neu starten
     if S.browseLaeuft then
       if S.mehrOffen then S.mehrOffen = false; pcall(C_AuctionHouse.RequestMoreBrowseResults); S.browseNeu = time()
-      elseif time() - math.max(S.browseT or 0, S.browseNeu or 0) >= 10 or time() - (S.browseT or 0) >= 90 then S.browseLaeuft = false end
+      elseif time() - math.max(S.browseT or 0, S.browseNeu or 0) >= 4 or time() - (S.browseT or 0) >= 60 then S.browseLaeuft = false end -- 2.65: 10 -> 4 Sek. warten
       GF.sniperZeigen(); return
     end
     snBrowse(); GF.sniperZeigen(); return
@@ -3829,7 +3881,15 @@ function GF.sniperErgebnis(id)
   id = tonumber(id)
   if not (S.an and S.suche == id) then return false end
   S.suche = nil; S.aktuell = nil
+  S.letzterGrund = nil
   local t = GF.sniperBewerten(id)
+  -- 2.65: Nein-Merker – Preis-Gruende bis ein billigeres Angebot kommt (max. 5 Min.), feste Gruende 30 Min.
+  if not t and S.letzterGrund then
+    local l = GF.live[id]
+    local p0 = (l and l.st and l.st[1] and l.st[1].p) or (S.fundP and S.fundP[id])
+    if SN_PREISGRUND[S.letzterGrund] and p0 then S.nein = S.nein or {}; S.nein[id] = { p = p0, t = time() } end
+    if SN_FESTGRUND[S.letzterGrund] then S.fest = S.fest or {}; S.fest[id] = time() end
+  end
   -- 2.64 (Wunsch Alex 21.11. 17:32): Modus „Sicher“ zeigt nur grüne Treffer
   if t and S.modus == "sicher" and t.risiko ~= "sicher" then
     local D2 = GF.sniperDiag(); D2.g["Modus Sicher: " .. (t.risiko == "risiko" and "orange" or "blau") .. " ausgeblendet"] = (D2.g["Modus Sicher: " .. (t.risiko == "risiko" and "orange" or "blau") .. " ausgeblendet"] or 0) + 1
@@ -3844,7 +3904,7 @@ function GF.sniperErgebnis(id)
   end
   if t and not S.treffer then
     S.treffer = t
-    if PlaySound then pcall(PlaySound, 8959) end
+    if PlaySound then pcall(PlaySound, 8959, "Master") end -- 2.65: auch bei leisen Effekten hoerbar
     if FlashClientIcon then pcall(FlashClientIcon) end
     -- 2.64.3: Kauf NICHT mehr vorbereiten – WoW startet einen Kauf nur nach Tastendruck (im Spiel getestet 21.11.:
     -- „Preis wird noch geholt“ hing). Ablauf: 1. Druck startet, 2. Druck bestaetigt.
@@ -3894,6 +3954,7 @@ function GF.sniperWarum()
   local function schnitt(l) if not l or #l == 0 then return nil end local x = 0; for _, v in ipairs(l) do x = x + v end; return math.floor(x / #l + 0.5) end
   local dd, bt = schnitt(D2.dauer), schnitt(D2.bisTreffer)
   if dd or bt then print(GRAU .. "  Tempo: Ø Durchgang " .. (dd and (dd .. " Sek.") or "—") .. " · Ø vom Fund bis zum Treffer " .. (bt and (bt .. " Sek.") or "—") .. ENDE) end
+  if (D2.gespart or 0) > 0 then print(GRAU .. "  Gesparte Suchen (Preis unverändert): " .. D2.gespart .. ENDE) end
   local g = sortiert(D2.g)
   if #g == 0 then print(GRAU .. "  Noch keine abgelehnten Kandidaten." .. ENDE) end
   for k = 1, math.min(8, #g) do print("  " .. g[k][2] .. "× " .. g[k][1]) end

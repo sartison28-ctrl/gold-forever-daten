@@ -2,7 +2,7 @@ dofile("/home/claude/test/t9.lua")
 local GF = GoldForever
 BROWSE = 0
 C_AuctionHouse.SendBrowseQuery = function(q) BROWSE = BROWSE + 1; BQ = q end
-local RES = {
+RES = {
   { itemKey = { itemID = 7777 }, minPrice = 600, totalQuantity = 20 },   -- Seltenkraut üblich 1000, 300/Tag -> Kandidat
   { itemKey = { itemID = 8800 }, minPrice = 4900, totalQuantity = 4 },  -- Schatzkarte 40/Tag -> kein Sniper
   { itemKey = { itemID = 99999 }, minPrice = 1, totalQuantity = 1 },    -- unbekannt

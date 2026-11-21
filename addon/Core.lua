@@ -3565,6 +3565,7 @@ function GF.sniperZeigen()
   snF.sicher:SetText(an1 and "Sicher: AN" or "Sicher"); snF.alle:SetText(an2 and "Alle: AN" or "Alle")
   snF.fokusK.bg:SetColorTexture(an3 and 0.98 or 0.3, an3 and 0.75 or 0.3, an3 and 0.15 or 0.3, an3 and 0.55 or 0.3)
   snF.fokusK:SetText(an3 and "Fokus: AN" or "Fokus")
+  snF.pfeil.bg:SetColorTexture(snDB().fokusEins and 0.98 or 0.3, snDB().fokusEins and 0.75 or 0.3, snDB().fokusEins and 0.15 or 0.3, 0.35)
   local t = S.treffer
   if t and time() - t.t > 45 then
     if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
@@ -3762,9 +3763,47 @@ local function snBauen()
   snF.sicher = modusKnopf("sicher", "Sicher", 6, "Nur grüne (sichere) Treffer. Kauf mit einem Tastendruck. Nochmal klicken = aus.")
   snF.alle = modusKnopf("alle", "Alle", 88, "Grüne, blaue und orange Treffer. Blau/orange brauchen zwei Tastendrücke (Schutz vor Verdrücken). Nochmal klicken = aus.")
   -- 2.68 (Wunsch Alex 21.11. 22:37): Fokus-Sniper – nur die Fokus-Items (Leder/Stoffe), so schnell wie moeglich
-  snF.fokusK = modusKnopf("fokus", "Fokus", 170, "Nur die Fokus-Items (Leder/Stoffe, /gf sniper fokus), so schnell wie Blizzard es erlaubt – keine große Durchsuche. Für umkämpfte Ware. Nochmal klicken = aus.")
+  snF.fokusK = modusKnopf("fokus", "Fokus", 170, "Nur das gewählte Fokus-Item (Pfeil daneben oder Rechtsklick = Item wählen), so schnell wie Blizzard es erlaubt – keine große Durchsuche. Für umkämpfte Ware wie Leder/Stoffe. Nochmal klicken = aus.")
+  -- 2.69: Item-Auswahl (Pfeil oder Rechtsklick auf „Fokus“)
+  snF.pfeil = CreateFrame("Button", nil, snF); snF.pfeil:SetSize(18, 22); snF.pfeil:SetPoint("LEFT", snF.fokusK, "RIGHT", 1, 0)
+  snF.pfeil.bg = snF.pfeil:CreateTexture(nil, "BACKGROUND"); snF.pfeil.bg:SetAllPoints(); snF.pfeil.bg:SetColorTexture(0.3, 0.3, 0.3, 0.3)
+  -- Pfeil als Textur (die WoW-Schrift kennt kein ▼)
+  snF.pfeil.tx = snF.pfeil:CreateTexture(nil, "ARTWORK"); snF.pfeil.tx:SetSize(14, 14); snF.pfeil.tx:SetPoint("CENTER", 0, -2); snF.pfeil.tx:SetTexture("Interface\\Buttons\\Arrow-Down-Up")
+  snF.wahl = CreateFrame("Frame", nil, snF); snF.wahl:SetFrameStrata("DIALOG"); snF.wahl:SetPoint("TOPLEFT", snF.fokusK, "BOTTOMLEFT", 0, -2); snF.wahl:SetSize(230, 20)
+  snF.wahl.bg = snF.wahl:CreateTexture(nil, "BACKGROUND"); snF.wahl.bg:SetAllPoints(); snF.wahl.bg:SetColorTexture(0.06, 0.07, 0.1, 0.97)
+  snF.wahl.zeilen = {}; snF.wahl:Hide()
+  local function wahlZeigen()
+    local W = snF.wahl
+    if W:IsShown() then W:Hide(); return end
+    local liste = { false }
+    for _, id in ipairs(GF.sniperFokusKandidaten(10)) do liste[#liste + 1] = id end
+    local eins = snDB().fokusEins
+    if eins then local da = false; for _, x in ipairs(liste) do if x == eins then da = true end end; if not da then table.insert(liste, 2, eins) end end
+    for k2, id in ipairs(liste) do
+      local z = W.zeilen[k2]
+      if not z then
+        z = CreateFrame("Button", nil, W); z:SetSize(226, 18); z:SetPoint("TOPLEFT", 2, -2 - (k2 - 1) * 18)
+        z.hl = z:CreateTexture(nil, "HIGHLIGHT"); z.hl:SetAllPoints(); z.hl:SetColorTexture(1, 1, 1, 0.1)
+        z.fs = z:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); z.fs:SetPoint("LEFT", 6, 0); z.fs:SetJustifyH("LEFT")
+        W.zeilen[k2] = z
+      end
+      local name = id and ((((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id))) or "Alle abwechselnd (bis 4 Leder/Stoffe)"
+      local aktiv = (id or nil) == eins
+      z.fs:SetText((aktiv and (GOLD .. "» ") or "   ") .. name .. (aktiv and ENDE or ""))
+      z:SetScript("OnClick", function() W:Hide(); GF.sniperFokusWaehlen(id or nil) end)
+      z:Show()
+    end
+    for k2 = #liste + 1, #W.zeilen do W.zeilen[k2]:Hide() end
+    W:SetHeight(4 + #liste * 18); W:Show()
+  end
+  GF.sniperFokusMenue = wahlZeigen
+  snF.pfeil:SetScript("OnClick", wahlZeigen)
+  snF.pfeil:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Fokus-Item wählen"); GameTooltip:AddLine("Ein Item = schnellste Abfrage. Eigene Items: /gf sniper fokus [Item]", 0.6, 0.6, 0.65, true); GameTooltip:Show() end)
+  snF.pfeil:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  snF.fokusK:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  snF.fokusK:SetScript("OnClick", function(_, knopf) if knopf == "RightButton" then wahlZeigen() else GF.sniperUmschalten(nil, "fokus") end end)
   snF.an = snF.sicher
-  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.fokusK, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
+  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.pfeil, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
   local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
   -- 2.58.2: Item-Icon + Name links, Knopf rechts daneben
   snF.icon = snF:CreateTexture(nil, "ARTWORK"); snF.icon:SetSize(30, 30); snF.icon:SetPoint("BOTTOMLEFT", 6, 5); snF.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); snF.icon:Hide()
@@ -3817,9 +3856,18 @@ function GF.istLederStoff(id)
   if not name then return false end
   return name:find("Leder$") ~= nil or name:find("stoff$") ~= nil or name:find("stoffballen$") ~= nil
 end
+-- 2.69 (Wunsch Alex 21.11. 22:47: „nur auf EIN Item konzentrieren, Wechsel einfach im Addon einstellbar“):
+-- snDB().fokusEins = gewaehltes Item -> Fokus nur auf dieses eine. GF.sniperFokusKandidaten() = Auswahlliste (max. 10).
 function GF.sniperFokus(neu)
   local S = GF.sniper
+  local eins = snDB().fokusEins
+  if eins then return { eins } end
   if not neu and S.fokus and time() - (S.fokusListeT or 0) < 300 then return S.fokus end
+  S.fokus, S.fokusListeT = GF.sniperFokusKandidaten(SN_FOKUS_N), time()
+  return S.fokus
+end
+function GF.sniperFokusKandidaten(nMax)
+  nMax = nMax or 10
   local db = snDB(); db.fokus = db.fokus or {}
   local treffer = {}
   local ab = time() - 3 * 86400
@@ -3836,9 +3884,17 @@ function GF.sniperFokus(neu)
     end
   end
   table.sort(kand, function(a, b) return a.w > b.w end)
-  for _, k in ipairs(kand) do if #out >= SN_FOKUS_N then break end; out[#out + 1] = k.id end
-  S.fokus, S.fokusListeT = out, time()
+  for _, k in ipairs(kand) do if #out >= nMax then break end; out[#out + 1] = k.id end
   return out
+end
+function GF.sniperFokusWaehlen(id)
+  local S = GF.sniper
+  snDB().fokusEins = id
+  S.fokus, S.fokusI, S.fokusRunde, S.fokusRundeStart = nil, 0, nil, nil
+  local name = id and (((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id)) or "alle Fokus-Items abwechselnd"
+  print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus auf " .. name .. ".")
+  -- Auswahl = Fokus-Modus an
+  if not (S.an and S.modus == "fokus") then GF.sniperUmschalten(true, "fokus") else GF.sniperZeigen() end
 end
 local function snSuche(id)
   local S = GF.sniper
@@ -4167,14 +4223,17 @@ function GF.sniperBefehl(rest)
   elseif cmd == "fokus" then
     db.fokus = db.fokus or {}
     local fid = wert and (tonumber(wert:match("item:(%d+)")) or tonumber(wert))
-    if wert == "aus" or wert == "an" then db.fokusAus = (wert == "aus") or nil
+    if wert == "alle" then GF.sniperFokusWaehlen(nil); return
+    elseif wert == "wahl" then if GF.sniperFokusMenue then GF.sniperFokusMenue() end; return
+    elseif wert == "aus" or wert == "an" then db.fokusAus = (wert == "aus") or nil
       print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus-Snipe " .. (db.fokusAus and "aus." or "an."))
     elseif fid then
       if db.fokus[fid] then db.fokus[fid] = nil else db.fokus[fid] = true end
+      GF.sniper.fokus = nil
       print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus " .. (db.fokus[fid] and "+ " or "– ") .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(fid)) or fid))
     end
     local t = {}; for _, x in ipairs(GF.sniperFokus(true)) do t[#t + 1] = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x) end
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus (je ~2 Sek. geprüft): " .. (#t > 0 and table.concat(t, ", ") or "—") .. GRAU .. "  ·  /gf sniper fokus [Item] = dazu/weg · /gf sniper fokus aus|an" .. ENDE)
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus (je ~2 Sek. geprüft): " .. (#t > 0 and table.concat(t, ", ") or "—") .. GRAU .. "  ·  /gf sniper fokus [Item] = dazu/weg · /gf sniper fokus alle · Auswahl: Pfeil neben „Fokus“" .. ENDE)
   elseif cmd == "rad" then
     db.rad = not db.rad
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Mausrad " .. (db.rad and "AN – jede Raste zählt wie ein Druck auf " .. db.taste .. " (nur solange ein Treffer angezeigt wird)." or "aus."))

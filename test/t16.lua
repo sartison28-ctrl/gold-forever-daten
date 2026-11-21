@@ -30,3 +30,15 @@ GF.live[765] = { t = JETZT, p = 1000, st = { { p = 1000, q = 5 } } }
 JETZT = JETZT + 1
 for _, p in ipairs(GF.positionen()) do if p.id == 765 then local pl = GF.verkaufsPlan(p); zeige("Snipe-Plan: " .. pl.art .. " – " .. pl.lang) end end
 zeige("Linien erzeugt: " .. tostring(LINES))
+-- 2.61.1
+local f = {}; for k = 0, 10 do f[#f + 1] = { t = JETZT - (10 - k) * 3600, p = 900 } end
+GoldForeverDB.posVerlauf[5004] = f
+local kf = GF.kursVerlauf(5004)
+zeige("Flach: " .. tostring(kf.flach) .. " | " .. GF.haltenWann({ id = 5004, ziel = 1300, seit = JETZT - 86400 }, kf))
+local hochV = {}; for k = 0, 10 do hochV[#hochV + 1] = { t = JETZT - (10 - k) * 3600, p = (k == 3) and 1200 or 900 + k } end
+GoldForeverDB.posVerlauf[5005] = hochV
+zeige("Schon gesehen: " .. GF.haltenWann({ id = 5005, ziel = 1180, seit = JETZT }, GF.kursVerlauf(5005)))
+GF.live[2453] = { t = JETZT, p = 50, st = { { p = 50, q = 2 }, { p = 70, q = 5 } } }
+GF.liveAbziehen(2453, 3)
+zeige("Live nach Kauf: p=" .. GF.live[2453].p .. " q=" .. GF.live[2453].st[1].q)
+assert(GF.live[2453].p == 70 and GF.live[2453].st[1].q == 4)

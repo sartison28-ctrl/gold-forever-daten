@@ -63,6 +63,17 @@ GF.live = {} -- [id] = {p = guenstigster Stueckpreis, n = Anzahl Angebote, t = Z
 -- fuer Entscheidungen zaehlt er bis zu 2 Std. vor den TSM-Daten (sonst springt z. B. eine
 -- Position nach der Suche zwischen "halten" und "jetzt einstellen" hin und her).
 local LIVE_FRISCH, LIVE_MERKEN = 600, 7200
+function GF.liveAbziehen(id, n)
+  local l = GF.live[tonumber(id)]
+  if not (l and l.st and #l.st > 0) then return end
+  local rest = n or 0
+  while rest > 0 and l.st[1] do
+    local x = l.st[1]
+    local q = x.q or 1
+    if q <= rest then rest = rest - q; table.remove(l.st, 1) else x.q = q - rest; rest = 0 end
+  end
+  if l.st[1] then l.p = l.st[1].p end
+end
 function GF.livePreis(id, frisch)
   local l = GF.live[tonumber(id)]
   if l and l.p and time() - l.t < (frisch and LIVE_FRISCH or LIVE_MERKEN) then return l.p, l end
@@ -1601,6 +1612,9 @@ local function kaufAbschliessen()
   local ausgabe = k.geld - GetMoney()
   if ausgabe > 0 then
     local v, ziel = kaufVorschlag(k.id); buchen("kauf", k.id, k.n, -ausgabe, v, ziel)
+    -- 2.61.1 (Raptorfleisch): gekaufte Stufen aus dem gemerkten Live-Markt nehmen – sonst galt der eben
+    -- leergekaufte Billigpreis weiter als Marktpreis und die Ware stand bis zur naechsten Suche unter „Halten“
+    pcall(GF.liveAbziehen, k.id, k.n)
     -- 2.57.1: Sniper-Kauf im Bilanz-Buch markieren (getrennte Auswertung im Lernsystem)
     local um = GF.unterbieterMerk and GF.unterbieterMerk[k.id]
     if um and um.sn and time() - um.t < 900 then local bb = B().buch; if bb[#bb] then bb[#bb].sn = true end end
@@ -1624,6 +1638,8 @@ local function kaufHaken()
   -- Einstellen: merken, ob das Item gerade zum Verkaufen vorgeschlagen war
   local function eingestellt(itemLoc, menge, preis)
     local ok, id = pcall(C_Item.GetItemID, itemLoc); if not ok or not id then return end
+    -- 2.61.1: Sniper-Erinnerung „sofort einstellen“ erledigt
+    if GF.sniper and GF.sniper.zuletzt and GF.sniper.zuletzt.id == id then GF.sniper.zuletzt = nil; if GF.sniperZeigen then pcall(GF.sniperZeigen) end end
     local e = GF.empfehlung(id)
     local name = (C_Item.GetItemInfo and C_Item.GetItemInfo(id)) or (GF.info(id) or {}).n
     if not name then return end
@@ -3232,6 +3248,8 @@ function GF.sniperZeigen()
     elseif S.browseLaeuft then was = "durchsucht das AH … " .. (S.browseN or 0) .. " Items"
     else was = "Durchgang " .. (S.zyklus or 0) .. " · " .. (S.browseN or 0) .. " Items gesehen" end
     local zl = S.zuletzt
+    -- 2.61.1: erledigt, sobald die Ware im AH liegt (auch per TSM eingestellt)
+    if zl and GF.imAH and (GF.imAH(zl.id) or 0) > (zl.ahVorher or 0) then S.zuletzt = nil; zl = nil end
     if zl and time() - zl.t < 600 then
       was = GRUEN .. "Gekauft: " .. zl.n .. "× " .. ((((C_Item and C_Item.GetItemInfo or GetItemInfo)(zl.id)) or ("Item " .. zl.id))) ..
         " – aus dem Briefkasten holen, dann sofort einstellen je " .. GF.geld(zl.neu) .. ENDE .. GRAU .. " · " .. was
@@ -3257,7 +3275,7 @@ local function snKlick(self, knopf)
         ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
       local d = snDB(); local tag = date("%Y-%m-%d"); d.treffer[tag] = (d.treffer[tag] or 0) + 1
       t.bezahlt = kk.unit; snLog(t, "gekauft")
-      S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time() } -- 2.61: Erinnerung "gleich wieder einstellen"
+      S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0 } -- 2.61: Erinnerung "gleich wieder einstellen"
       d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end

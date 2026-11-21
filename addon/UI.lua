@@ -338,11 +338,16 @@ end
 
 -- ---------------------------------------------------------------- 2.61 Halten: wohin will GF? (Wunsch Alex 21.11.)
 -- Kursverlauf der letzten 48 Std. (Messreihe der gekauften Ware, max. 13 Punkte) + Trend gegen ca. 24 Std. vorher
+-- 2.61.1: flach = keine neuen Preise gemessen (alle gleich) -> „–“ statt „0 %“; std = abgedeckte Stunden;
+-- hoch = hoechster gemessener Preis (ganze Messreihe, ca. 2,5 Tage)
 function GF.kursVerlauf(id)
   local v = (GoldForeverDB.posVerlauf or {})[tonumber(id)] or {}
   local jetzt = time()
-  local pts = {}
-  for _, m in ipairs(v) do if jetzt - m.t <= 48 * 3600 and m.p and m.p > 0 then pts[#pts + 1] = m end end
+  local pts, hoch = {}, 0
+  for _, m in ipairs(v) do
+    if m.p and m.p > 0 then hoch = math.max(hoch, m.p) end
+    if jetzt - m.t <= 48 * 3600 and m.p and m.p > 0 then pts[#pts + 1] = m end
+  end
   if #pts < 3 then return nil end
   local aus = {}
   local schritt = math.max(1, (#pts - 1) / 12)
@@ -352,7 +357,10 @@ function GF.kursVerlauf(id)
   local letzt = pts[#pts].p
   local vorher = pts[1].p
   for kk = #pts, 1, -1 do if jetzt - pts[kk].t >= 20 * 3600 then vorher = pts[kk].p; break end end
-  return { pts = aus, trend = math.floor((letzt / vorher - 1) * 100 + 0.5), letzt = letzt }
+  local flach = true
+  for _, m in ipairs(pts) do if m.p ~= pts[1].p then flach = false; break end end
+  return { pts = aus, trend = math.floor((letzt / vorher - 1) * 100 + 0.5), letzt = letzt, flach = flach,
+    std = (pts[#pts].t - pts[1].t) / 3600, hoch = hoch }
 end
 local function tagWort(a)
   local heute = date("%Y-%m-%d")
@@ -360,7 +368,19 @@ local function tagWort(a)
   if date("%Y-%m-%d", a - 86400) == heute then return "morgen" end
   return GF.WT[tonumber(date("%w", a)) + 1]
 end
--- Kurzer Text: wann wird GF das Item voraussichtlich einstellen?
+-- Trend je Tag (%): eigener Kurs, sobald er >= 12 Std. abdeckt und sich bewegt – sonst Realm (3 Tage), sonst Datendatei.
+-- Text, Pfeil und Kurve nutzen damit dieselbe Quelle (2.61.1, Herz des Feuers: Kurve +25 %, Text „fällt“).
+function GF.kursTrend(id, kurs)
+  if kurs and not kurs.flach and kurs.std >= 12 then return kurs.trend, "kurs" end
+  local rl = GF.realm(id)
+  if rl and rl.n and rl.n >= 3 then return rl.tr3 / 3, "realm" end
+  local z = GF.zeit(id) or {}
+  if z.t then return z.t / 3, "datei" end
+  return nil
+end
+-- Kurzer Text: wann wird GF das Item voraussichtlich einstellen? Liefert Text, Erklaerung (Tooltip)
+-- 2.61.1: immer eine Zeitangabe – erreichbar (Ziel in den letzten Tagen schon gesehen) -> naechstes Tageshoch;
+-- steigt -> in N Tagen; sonst spaetestens nach 7 Tagen (dann verkauft GF mit kleinem Gewinn, im Minus greift die Verlustbremse)
 function GF.haltenWann(p, kurs)
   local i = GF.info(p.id) or {}
   local markt = (i.p and i.p - 1) or (kurs and kurs.letzt)
@@ -372,18 +392,23 @@ function GF.haltenWann(p, kurs)
   local a, b = naechstesFenster(std, 3)
   local fenster = tagWort(a) .. " " .. tonumber(date("%H", a)) .. "–" .. tonumber(date("%H", b)) .. " Uhr"
   local pz = math.floor(abstand * 100 + 0.5)
-  if abstand <= 0.03 then return "einstellen ca. " .. fenster end
-  local spanne = tf and tf.spanne or 5
-  if pz <= spanne then return "Ziel +" .. pz .. " % · Tageshoch " .. fenster .. " reicht evtl." end
-  -- Trend je Tag: Realm (3 Tage), sonst eigener Kursverlauf, sonst Datendatei
-  local rl = GF.realm(p.id)
-  local proTag = (rl and rl.n and rl.n >= 3 and rl.tr3 / 3) or (kurs and kurs.trend) or ((z.t or 0) / 3)
+  local ende = (p.seit or time()) + 7 * 86400
+  local endeTxt = GF.WT[tonumber(date("%w", ende)) + 1] .. " " .. date("%d.%m.", ende)
+  local spaet = "Spätestens " .. endeTxt .. ": Nach 7 Tagen verkauft Gold Forever mit kleinem Gewinn, falls die Ware im Plus ist – im Minus greift die Verlustbremse."
+  if abstand <= 0.03 then return "einstellen ca. " .. fenster, "Der Preis ist fast am Ziel – im nächsten Tageshoch einstellen." end
+  local hochFarbe = pz >= 30 and H.orange or ""
+  local zTxt = hochFarbe .. "+" .. pz .. " %" .. (hochFarbe ~= "" and ENDE .. H.grau or "")
+  -- schon gesehen: hoechster gemessener Preis der letzten Tage erreicht das Ziel
+  if kurs and kurs.hoch and kurs.hoch >= p.ziel * 0.97 then
+    return "ca. " .. fenster .. " (Tageshoch)", "Den Zielpreis gab es in den letzten Tagen schon – er kommt meist im Tageshoch wieder. " .. spaet
+  end
+  local proTag = GF.kursTrend(p.id, kurs)
   if proTag and proTag >= 1 then
     local tage = math.ceil(pz / proTag)
-    if tage <= 7 then return "Ziel +" .. pz .. " % · ca. " .. (tage <= 1 and "morgen" or ("in " .. tage .. " Tagen")) end
+    if tage <= 7 then return zTxt .. " · ca. " .. (tage <= 1 and "morgen" or ("in " .. tage .. " Tagen")), "Geschätzt aus dem Preisanstieg der letzten Tage. " .. spaet end
   end
-  if proTag and proTag <= -1 then return "Ziel +" .. pz .. " % · Preis fällt noch" end
-  return "Ziel +" .. pz .. " % · Preis seitwärts, dauert"
+  local richtung = (proTag and proTag <= -1) and "fällt" or "seitwärts"
+  return zTxt .. " · " .. richtung .. " · bis " .. endeTxt, (pz >= 30 and "Ziel hoch (orange): Es liegt weit über dem Markt und wurde zuletzt nicht erreicht. " or "") .. spaet
 end
 
 -- ---------------------------------------------------------------- Karte (Handlungs-Zeile, 436 × 36)
@@ -554,7 +579,9 @@ local function setzeKarte(z, e)
     local zielDrin = kurs.ziel and kurs.ziel <= hi * 1.5
     if zielDrin then hi = math.max(hi, kurs.ziel); lo = math.min(lo, kurs.ziel) end
     if hi - lo < 1 then hi = lo + 1 end
-    local c = (kurs.trend >= 3 and F.gruen) or (kurs.trend <= -3 and F.orange) or F.grau
+    local tr = (not kurs.flach) and (GF.kursTrend(z.itemId, kurs)) or 0
+    if kurs.flach then tr = 0 end
+    local c = (tr >= 1 and F.gruen) or (tr <= -1 and F.orange) or F.grau
     local t0, t1 = kurs.pts[1].t, kurs.pts[#kurs.pts].t
     local function xy(m) return (t1 > t0 and (m.t - t0) / (t1 - t0) or 0) * W, 1 + (m.p - lo) / (hi - lo) * (Hh - 2) end
     for k = 2, #kurs.pts do
@@ -570,8 +597,10 @@ local function setzeKarte(z, e)
       local _, yz = xy({ t = t0, p = kurs.ziel })
       z.kurs.ziel:ClearAllPoints(); z.kurs.ziel:SetPoint("BOTTOMLEFT", z.kurs, "BOTTOMLEFT", 0, yz); z.kurs.ziel:SetWidth(W); z.kurs.ziel:Show()
     else z.kurs.ziel:Hide() end
-    local farbe = (kurs.trend >= 3 and H.gruen) or (kurs.trend <= -3 and H.orange) or H.grau
-    z.kurs.txt:SetText(farbe .. (kurs.trend > 0 and "+" or "") .. kurs.trend .. " %" .. ENDE)
+    -- 2.61.1: Zahl = Trend je Tag aus derselben Quelle wie der Text; „–“ = keine neuen Preise gemessen
+    local farbe = (tr >= 1 and H.gruen) or (tr <= -1 and H.orange) or H.grau
+    local trz = math.floor(tr + (tr >= 0 and 0.5 or -0.5))
+    z.kurs.txt:SetText(kurs.flach and (H.grau .. "–" .. ENDE) or (farbe .. (trz > 0 and "+" or "") .. trz .. " %/Tag" .. ENDE))
     z.kurs:Show(); z.kurs.txt:Show()
   else z.kurs:Hide(); z.kurs.txt:Hide() end
   -- Aktions-Knopf nur am offenen AH und nur, wenn die Ware da ist (Einstellen: in der Tasche)
@@ -590,7 +619,7 @@ local function setzeKarte(z, e)
     z.aktion.bg:SetColorTexture(c[1], c[2], c[3], 0.18); z.aktion:Show()
     z.zeile2:SetWidth(INNEN - 48 - 88)
   else
-    z.aktion.a = nil; z.aktion:Hide(); z.zeile2:SetWidth(INNEN - 48 - ((kurs and kurs.pts and #kurs.pts >= 2) and 100 or 0))
+    z.aktion.a = nil; z.aktion:Hide(); z.zeile2:SetWidth(INNEN - 48 - ((kurs and kurs.pts and #kurs.pts >= 2) and 122 or 0))
   end
   z:Show()
 end
@@ -931,7 +960,9 @@ local function standardDaten()
           local kurs = GF.kursVerlauf(p.id)
           if kurs then kurs.ziel = p.ziel end
           e.kurs = kurs
-          e.zeile2 = mit(verb("blau", "Halten bis " .. GF.geld(p.ziel)), grau(GF.haltenWann(p, kurs)))
+          local wann, warum = GF.haltenWann(p, kurs)
+          e.zeile2 = mit(verb("blau", "Halten bis " .. GF.geld(p.ziel)), grau(wann))
+          if warum then e.hinweis = warum .. ((kurs and kurs.flach) and " Kurve flach: seit der letzten AH-Prüfung keine neuen Preise – im AH prüfen." or "") end
         end
         if not pl.post then e.prognose = GF.prognose(p.id, p) end
         if pl.imAH or pl.kurz == "im AH, unterboten" then

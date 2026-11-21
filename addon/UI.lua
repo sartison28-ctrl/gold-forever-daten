@@ -336,6 +336,56 @@ local function prognoseTooltip(pr)
   GameTooltip:AddLine(pr.unsicher and "Schätzung – noch wenig Preisverlauf für dieses Item." or "Schätzung aus dem Preisverlauf der letzten Tage.", F.grau[1], F.grau[2], F.grau[3], true)
 end
 
+-- ---------------------------------------------------------------- 2.61 Halten: wohin will GF? (Wunsch Alex 21.11.)
+-- Kursverlauf der letzten 48 Std. (Messreihe der gekauften Ware, max. 13 Punkte) + Trend gegen ca. 24 Std. vorher
+function GF.kursVerlauf(id)
+  local v = (GoldForeverDB.posVerlauf or {})[tonumber(id)] or {}
+  local jetzt = time()
+  local pts = {}
+  for _, m in ipairs(v) do if jetzt - m.t <= 48 * 3600 and m.p and m.p > 0 then pts[#pts + 1] = m end end
+  if #pts < 3 then return nil end
+  local aus = {}
+  local schritt = math.max(1, (#pts - 1) / 12)
+  local k = 1
+  while k <= #pts do aus[#aus + 1] = pts[math.floor(k + 0.5)]; k = k + schritt end
+  if aus[#aus] ~= pts[#pts] then aus[#aus + 1] = pts[#pts] end
+  local letzt = pts[#pts].p
+  local vorher = pts[1].p
+  for kk = #pts, 1, -1 do if jetzt - pts[kk].t >= 20 * 3600 then vorher = pts[kk].p; break end end
+  return { pts = aus, trend = math.floor((letzt / vorher - 1) * 100 + 0.5), letzt = letzt }
+end
+local function tagWort(a)
+  local heute = date("%Y-%m-%d")
+  if date("%Y-%m-%d", a) == heute then return "heute" end
+  if date("%Y-%m-%d", a - 86400) == heute then return "morgen" end
+  return GF.WT[tonumber(date("%w", a)) + 1]
+end
+-- Kurzer Text: wann wird GF das Item voraussichtlich einstellen?
+function GF.haltenWann(p, kurs)
+  local i = GF.info(p.id) or {}
+  local markt = (i.p and i.p - 1) or (kurs and kurs.letzt)
+  if not (markt and markt > 0 and p.ziel) then return "Gold Forever meldet sich" end
+  local abstand = p.ziel / markt - 1
+  local z = GF.zeit(p.id) or {}
+  local tf = GF.tagesfenster()
+  local std = z.bv or (tf and tf.vVon) or 11
+  local a, b = naechstesFenster(std, 3)
+  local fenster = tagWort(a) .. " " .. tonumber(date("%H", a)) .. "–" .. tonumber(date("%H", b)) .. " Uhr"
+  local pz = math.floor(abstand * 100 + 0.5)
+  if abstand <= 0.03 then return "einstellen ca. " .. fenster end
+  local spanne = tf and tf.spanne or 5
+  if pz <= spanne then return "Ziel +" .. pz .. " % · Tageshoch " .. fenster .. " reicht evtl." end
+  -- Trend je Tag: Realm (3 Tage), sonst eigener Kursverlauf, sonst Datendatei
+  local rl = GF.realm(p.id)
+  local proTag = (rl and rl.n and rl.n >= 3 and rl.tr3 / 3) or (kurs and kurs.trend) or ((z.t or 0) / 3)
+  if proTag and proTag >= 1 then
+    local tage = math.ceil(pz / proTag)
+    if tage <= 7 then return "Ziel +" .. pz .. " % · ca. " .. (tage <= 1 and "morgen" or ("in " .. tage .. " Tagen")) end
+  end
+  if proTag and proTag <= -1 then return "Ziel +" .. pz .. " % · Preis fällt noch" end
+  return "Ziel +" .. pz .. " % · Preis seitwärts, dauert"
+end
+
 -- ---------------------------------------------------------------- Karte (Handlungs-Zeile, 436 × 36)
 local function karteKlick(self, taste)
   if not self.itemId or self.platzhalter then return end
@@ -441,6 +491,13 @@ local function karte(parent)
   z.uhr:SetScript("OnEnter", function() z.hl:Show(); GameTooltip:SetOwner(z.uhr, "ANCHOR_RIGHT"); GameTooltip:AddLine(itemName(z.itemId or 0)); prognoseTooltip(z.prognose); GameTooltip:Show() end)
   z.uhr:SetScript("OnLeave", function() z.hl:Hide(); GameTooltip:Hide() end)
   z.uhr:Hide()
+  -- 2.61: Mini-Kursverlauf (48 Std.) unten rechts bei „Halten“, gold gestrichelt = Ziel
+  z.kurs = CreateFrame("Frame", nil, z); z.kurs:SetSize(56, 13); z.kurs:SetPoint("BOTTOMRIGHT", -8, 4)
+  z.kurs.bg = z.kurs:CreateTexture(nil, "BACKGROUND"); z.kurs.bg:SetAllPoints(); z.kurs.bg:SetColorTexture(1, 1, 1, 0.04)
+  z.kurs.ziel = z.kurs:CreateTexture(nil, "BORDER"); z.kurs.ziel:SetHeight(1); z.kurs.ziel:SetColorTexture(F.gold[1], F.gold[2], F.gold[3], 0.6)
+  z.kurs.linien = {}
+  z.kurs.txt = text(z, 10); z.kurs.txt:SetPoint("RIGHT", z.kurs, "LEFT", -4, 0); z.kurs.txt:SetJustifyH("RIGHT")
+  z.kurs:Hide(); z.kurs.txt:Hide()
   z:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   z:SetScript("OnClick", karteKlick)
   z:SetScript("OnEnter", karteTooltip)
@@ -488,6 +545,35 @@ local function setzeKarte(z, e)
   else z.uhr:Hide() end
   z.betrag:SetText(e.betrag or "")
   z.zeile2:SetText(e.zeile2 or "")
+  local kurs = e.kurs
+  for _, ln in ipairs(z.kurs.linien) do ln:Hide() end
+  if kurs and kurs.pts and #kurs.pts >= 2 then
+    local W, Hh = 56, 13
+    local lo, hi = math.huge, 0
+    for _, m in ipairs(kurs.pts) do lo = math.min(lo, m.p); hi = math.max(hi, m.p) end
+    local zielDrin = kurs.ziel and kurs.ziel <= hi * 1.5
+    if zielDrin then hi = math.max(hi, kurs.ziel); lo = math.min(lo, kurs.ziel) end
+    if hi - lo < 1 then hi = lo + 1 end
+    local c = (kurs.trend >= 3 and F.gruen) or (kurs.trend <= -3 and F.orange) or F.grau
+    local t0, t1 = kurs.pts[1].t, kurs.pts[#kurs.pts].t
+    local function xy(m) return (t1 > t0 and (m.t - t0) / (t1 - t0) or 0) * W, 1 + (m.p - lo) / (hi - lo) * (Hh - 2) end
+    for k = 2, #kurs.pts do
+      local ln = z.kurs.linien[k - 1]
+      if not ln and z.kurs.CreateLine then ln = z.kurs:CreateLine(nil, "ARTWORK"); z.kurs.linien[k - 1] = ln end
+      if ln then
+        local x1, y1 = xy(kurs.pts[k - 1]); local x2, y2 = xy(kurs.pts[k])
+        ln:SetStartPoint("BOTTOMLEFT", z.kurs, x1, y1); ln:SetEndPoint("BOTTOMLEFT", z.kurs, x2, y2)
+        ln:SetThickness(1.5); ln:SetColorTexture(c[1], c[2], c[3], 1); ln:Show()
+      end
+    end
+    if zielDrin then
+      local _, yz = xy({ t = t0, p = kurs.ziel })
+      z.kurs.ziel:ClearAllPoints(); z.kurs.ziel:SetPoint("BOTTOMLEFT", z.kurs, "BOTTOMLEFT", 0, yz); z.kurs.ziel:SetWidth(W); z.kurs.ziel:Show()
+    else z.kurs.ziel:Hide() end
+    local farbe = (kurs.trend >= 3 and H.gruen) or (kurs.trend <= -3 and H.orange) or H.grau
+    z.kurs.txt:SetText(farbe .. (kurs.trend > 0 and "+" or "") .. kurs.trend .. " %" .. ENDE)
+    z.kurs:Show(); z.kurs.txt:Show()
+  else z.kurs:Hide(); z.kurs.txt:Hide() end
   -- Aktions-Knopf nur am offenen AH und nur, wenn die Ware da ist (Einstellen: in der Tasche)
   local a = e.aktion
   if a and (GF.ah or a.immer) and (a.art ~= "post" or (GF.inTasche and GF.inTasche(a.id))) then
@@ -504,7 +590,7 @@ local function setzeKarte(z, e)
     z.aktion.bg:SetColorTexture(c[1], c[2], c[3], 0.18); z.aktion:Show()
     z.zeile2:SetWidth(INNEN - 48 - 88)
   else
-    z.aktion.a = nil; z.aktion:Hide(); z.zeile2:SetWidth(INNEN - 48)
+    z.aktion.a = nil; z.aktion:Hide(); z.zeile2:SetWidth(INNEN - 48 - ((kurs and kurs.pts and #kurs.pts >= 2) and 100 or 0))
   end
   z:Show()
 end
@@ -840,7 +926,13 @@ local function standardDaten()
         elseif pl.imAH or pl.kurz == "im AH, unterboten" then
           e.zeile2 = mit(verb("blau", "Liegt im AH" .. (p.ahPreis and (" für " .. GF.geld(p.ahPreis)) or "")),
             pl.imAH and grau("warten, bis verkauft") or verb("orange", "unterboten – nach Ablauf neu einstellen"))
-        else e.zeile2 = mit(verb("blau", "Halten bis " .. GF.geld(p.ziel)), grau("Gold Forever meldet sich")) end
+        else
+          -- 2.61: statt „Gold Forever meldet sich“ das voraussichtliche Zeitfenster + Mini-Kurs
+          local kurs = GF.kursVerlauf(p.id)
+          if kurs then kurs.ziel = p.ziel end
+          e.kurs = kurs
+          e.zeile2 = mit(verb("blau", "Halten bis " .. GF.geld(p.ziel)), grau(GF.haltenWann(p, kurs)))
+        end
         if not pl.post then e.prognose = GF.prognose(p.id, p) end
         if pl.imAH or pl.kurz == "im AH, unterboten" then
           if pl.kurz == "im AH, unterboten" then e.ton = F.orange end

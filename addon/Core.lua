@@ -111,6 +111,13 @@ function GF.info(id)
   -- Kaufpreis beim Haendler: TSM merkt ihn sich beim Haendlerbesuch, Gold Forever ebenfalls (GoldForeverDB.haendler)
   local vb = tsm("VendorBuy", id) or (GoldForeverDB.haendler and GoldForeverDB.haendler[id])
   local name, _, q, _, _, _, _, _, _, _, vk, kl = (C_Item and C_Item.GetItemInfo or GetItemInfo)(id)
+  -- 2.61 (Sniper-Check 21.11.): Klasse/Qualitaet auch ohne geladenen Item-Cache – GetItemInfoInstant ist sofort da.
+  -- Vorher fielen ~950 Realm-Items als "Item-Infos laden noch" durchs Raster, solange WoW sie nicht im Cache hatte.
+  if not kl then
+    local f = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    if f then local ok, _, _, _, _, _, k2 = pcall(f, id); if ok and k2 then kl = k2 end end
+  end
+  if not q and C_Item and C_Item.GetItemQualityByID then local ok, q2 = pcall(C_Item.GetItemQualityByID, id); if ok and q2 then q = q2 end end
   local sr = tsm("DBRegionSaleRate*1000", id)
   -- 2.56 (Befund 49): Items, die nur in den Realm-Daten (GitHub) stehen, kennt GF jetzt auch
   local rl = not it and GF.realm(id)
@@ -1761,6 +1768,7 @@ function GF.positionen()
     if (x.art == "kauf" or x.art == "herg") and x.v then
       p = p or { id = x.id, char = x.char or "?", n = 0, kosten = 0, zielSumme = 0, zielN = 0, seit = x.t }
       if x.art == "herg" then p.hergestellt = true end
+      if x.sn then p.snipe = true end
       p.n = p.n + x.n; p.kosten = p.kosten - x.betrag
       if x.ziel then p.zielSumme = p.zielSumme + x.ziel * x.n; p.zielN = p.zielN + x.n end
       pos[key] = p
@@ -2003,6 +2011,12 @@ function GF.verkaufsPlan(p)
   -- 2.53.3 (Befund 38): Hergestelltes direkt verkaufen, sobald der Erloes ueber dem Wert der Zutaten liegt
   if p.hergestellt and markt and markt * 0.95 >= p.ek then
     return { art = "verk", kurz = "jetzt einstellen", preis = markt, lang = "Hergestellt nach Vorschlag – jetzt für " .. GF.geld(markt) .. " einstellen (Zutaten-Wert " .. GF.geld(p.ek) .. ")" }
+  end
+  -- 2.61 (Wunsch Alex): Snipe-Ware sofort wieder einstellen, sobald nach Gebuehr >= 3 % Gewinn drin ist –
+  -- vorn im AH stehen und den Gewinn schnell mitnehmen statt auf das volle Ziel zu warten
+  if p.snipe and markt and markt < p.ziel and markt * 0.95 >= p.ek * 1.03 then
+    return { art = "verk", kurz = "jetzt einstellen", preis = markt, lang = "Snipe – sofort für " .. GF.geld(markt) .. " einstellen, du stehst vorn (ca. +" ..
+      GF.geld(math.floor((markt * 0.95 - p.ek) * p.n)) .. ")" }
   end
   if markt and markt >= p.ziel then
     -- Preisspitze: guenstiges Angebot wurde leergekauft, Markt liegt weit ueber ueblich.
@@ -3033,7 +3047,7 @@ end
 -- 1. Druck startet den Kauf (Server nennt den Preis), 2. Druck bestaetigt. Ist der Preis inzwischen hoeher als der
 -- Hoechstpreis, bricht GF automatisch ab. Taste: F8 (aenderbar: /gf sniper taste X). Nur Rohstoffe (Commodities).
 GF.sniper = { an = false, k = 0, liste = {}, listeT = 0 }
-local SN_TAKT, SN_MIN = 1.6, 300
+local SN_TAKT, SN_MIN, SN_MIN_LEINE = 1.6, 300, 1000
 local function snDB()
   GoldForeverDB.sniper = GoldForeverDB.sniper or {}
   local s = GoldForeverDB.sniper
@@ -3067,25 +3081,39 @@ function GF.sniperListe(neu)
   S.liste, S.listeT = out, time()
   return out
 end
-function GF.sniperGrenze(id, i, R)
+-- 2.61 (Wunsch Alex 21.11., "Sniper von der Leine"): Grenze nach Umsatz gestaffelt – sehr schnell laufende Ware
+-- (>= 500/Tag) schon ab 12 % unter ueblich, sonst wie bisher 15 %; hoechstens 10 % unter ueblich (bewaehrt)
+function GF.sniperGrenze(id, i, R, umsatz)
   local erf = GF.erfahrung(id)
+  local u = umsatz or i.u or 0
   local grenze = 0.85
+  if u >= 500 then grenze = 0.88 end
   if i.nurRealm and not erf then grenze = 0.80 end
-  if (i.u or 0) < 50 then grenze = math.min(grenze, 0.75) end
-  if erf and erf.bewaehrt then grenze = grenze + 0.03 elseif erf and erf.vorsicht then grenze = grenze - 0.10 end
+  if u < 50 then grenze = math.min(grenze, 0.75) end
+  if erf and erf.bewaehrt then grenze = math.min(0.90, grenze + 0.03) elseif erf and erf.vorsicht then grenze = grenze - 0.10 end
   if i.mw and i.mw > 0 and R and R > 0 then grenze = math.min(grenze, 0.95 * i.mw / R) end
   return grenze
 end
 -- Treffer pruefen: guenstige Preisstufen unter der Kaufgrenze, Wiederverkauf knapp unter der naechsten Stufe (max. üblich)
+-- 2.61 (Sniper-Check 21.11.): "Preis faellt seit Tagen" sperrte 113 von 460 Sniper-Items. Beim Snipe wird sofort
+-- unter dem naechsten fremden Angebot wieder eingestellt (Gewinn aus dem Live-Markt), darum sperrt ein leichter
+-- Abwaertstrend bei schnell laufender Ware (>= 200/Tag) nicht mehr – nur ein starker (>= 3 Tage oder <= -20 % in 3 Tagen).
+function GF.sniperFaellt(id, umsatz)
+  if not GF.faelltTage(id) then return false end
+  if (umsatz or 0) < 200 then return true end
+  local rl = GF.realm(id)
+  if rl and rl.n >= 3 then return rl.fall >= 3 or rl.tr3 <= -20 end
+  local z = (D().zeit or {})[tonumber(id)] or {}
+  return (z.rfall or 0) >= 3 or (z.rtr3 or 0) <= -20
+end
 function GF.sniperBewerten(id)
   id = tonumber(id)
   local l = GF.live[id]; if not (l and l.st and #l.st > 0 and not l.voll) then return nil end
   local i = GF.info(id); if not i or i.vb or GF.HAENDLERWARE[id] then return nil end
-  if not GF.handelbar(i) or GF.faelltTage(id) then return nil end
+  if not GF.handelbar(i) or GF.sniperFaellt(id, i.u) then return nil end
   local R, _, _, eingebr = GF.referenz(id, i); if not R or eingebr then return nil end
   -- 2.58 (Wunsch Alex): Items mit wenig Umsatz (< 50/Tag) nicht snipen – ausser selbst in die Merkliste eingetragen
   if (i.u or 0) < 50 and not snDB().eigen[id] then return nil end
-  local grenze = GF.sniperGrenze(id, i, R)
   -- 2.58.2 (Befund 53, 600× Wuttrank): Hektik-Sperre – mehrere Treffer zum selben Item in kurzer Zeit
   -- = oft neues billiges Angebot (neuer Preis) statt Schnaeppchen -> Item 30 Min. pausieren
   local S = GF.sniper
@@ -3093,7 +3121,8 @@ function GF.sniperBewerten(id)
   local h = S.hits[id] or {}
   local frisch = {}; for _, t0 in ipairs(h) do if time() - t0 < 600 then frisch[#frisch + 1] = t0 end end
   S.hits[id] = frisch
-  if #frisch >= 2 then
+  -- 2.61: sehr schnell laufende Ware (>= 500/Tag laut Daten) erst ab dem 4. Treffer pausieren
+  if #frisch >= (((i.u or 0) >= 500) and 3 or 2) then
     S.skip = S.skip or {}; S.skip[id] = time() + 1200 -- 600 s Ruhe aus snTick + 1200 = 30 Min.
     return nil
   end
@@ -3104,6 +3133,7 @@ function GF.sniperBewerten(id)
   if rl and rl.vt then umsatz = math.min(umsatz > 0 and umsatz or rl.vt, rl.vt) end
   local tsmU = tsm("DBRegionSoldPerDay*1000", id)
   if tsmU then umsatz = math.min(umsatz, tsmU / 1000) end
+  local grenze = GF.sniperGrenze(id, i, R, umsatz)
   local halb = math.max(1, math.floor(umsatz * 0.5))
   local cap = math.max(3, math.floor(umsatz * 0.10))
   local gold = GetMoney and GetMoney() or 0
@@ -3140,6 +3170,8 @@ function GF.sniperBewerten(id)
   if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
   if n > deckel then return nil end
   if gewinn < SN_MIN then return nil end
+  -- 2.61: neue Zone (weniger als 15 % unter ueblich) nur mit mind. 10s Gewinn nach Gebuehr – sonst lohnt der Klick nicht
+  if maxP > Rv * 0.85 and gewinn < SN_MIN_LEINE then return nil end
   frisch[#frisch + 1] = time()
   return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(),
     abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
@@ -3199,6 +3231,11 @@ function GF.sniperZeigen()
     if S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
     elseif S.browseLaeuft then was = "durchsucht das AH … " .. (S.browseN or 0) .. " Items"
     else was = "Durchgang " .. (S.zyklus or 0) .. " · " .. (S.browseN or 0) .. " Items gesehen" end
+    local zl = S.zuletzt
+    if zl and time() - zl.t < 600 then
+      was = GRUEN .. "Gekauft: " .. zl.n .. "× " .. ((((C_Item and C_Item.GetItemInfo or GetItemInfo)(zl.id)) or ("Item " .. zl.id))) ..
+        " – aus dem Briefkasten holen, dann sofort einstellen je " .. GF.geld(zl.neu) .. ENDE .. GRAU .. " · " .. was
+    end
     snF.info:SetText(S.an and (GRAU .. was .. " · Kandidaten " .. (S.kandidaten or 0) .. " · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
       or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sniper“ startet die Suche · Taste " .. snDB().taste .. ENDE))
   end
@@ -3220,6 +3257,7 @@ local function snKlick(self, knopf)
         ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
       local d = snDB(); local tag = date("%Y-%m-%d"); d.treffer[tag] = (d.treffer[tag] or 0) + 1
       t.bezahlt = kk.unit; snLog(t, "gekauft")
+      S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time() } -- 2.61: Erinnerung "gleich wieder einstellen"
       d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
@@ -3311,13 +3349,14 @@ function GF.sniperBrowse()
       local i = GF.info(id)
       if i and not i.vb and (i.u or 0) >= 50 then
         local R, _, _, eingebr = GF.referenz(id, i)
-        if R and not eingebr and r.minPrice <= R * GF.sniperGrenze(id, i, R) and R * 0.95 - r.minPrice >= 30 and not GF.faelltTage(id) then
+        if R and not eingebr and r.minPrice <= R * GF.sniperGrenze(id, i, R) and R * 0.95 - r.minPrice >= 30 and GF.handelbar(i) and not GF.sniperFaellt(id, i.u) then
           table.insert(S.queue, 1, id); drin[id] = true
           S.kandidaten = (S.kandidaten or 0) + 1
         end
       end
     end
   end
+  if #res > (S.bIdx or 0) then S.browseNeu = time() end -- 2.61: Fortschritt merken
   S.bIdx = #res; S.browseN = #res
   if C_AuctionHouse.HasFullBrowseResults and not C_AuctionHouse.HasFullBrowseResults() and C_AuctionHouse.RequestMoreBrowseResults then
     pcall(C_AuctionHouse.RequestMoreBrowseResults)
@@ -3337,7 +3376,10 @@ local function snTick()
   S.suche = nil
   local browse = C_AuctionHouse and C_AuctionHouse.SendBrowseQuery
   if browse then
-    if S.browseLaeuft and time() - (S.browseT or 0) < 20 then return end
+    -- 2.61 (Sniper-Check): Durchsuche nicht mehr nach festen 20 Sek. abbrechen – solange neue Seiten kommen
+    -- (letzte vor < 10 Sek.), weiterlaufen lassen; sonst sah der Sniper bei langen Listen (nach Preis sortiert)
+    -- die teureren Items am Ende nie. Hoechstens 90 Sek. je Durchgang.
+    if S.browseLaeuft and time() - (S.browseT or 0) < 90 and time() - math.max(S.browseT or 0, S.browseNeu or 0) < 10 then return end
     S.browseLaeuft = false
     S.queue = S.queue or {}
     local id = table.remove(S.queue, 1)

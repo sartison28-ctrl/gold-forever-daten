@@ -2598,6 +2598,128 @@ function GF.geldBuchen()
   local grenze = date("%Y-%m-%d", time() - 60 * 86400)
   for d in pairs(c) do if d < grenze then c[d] = nil end end
 end
+-- ---------------------------------------------------------------- 2.63 Vermoegen (Wunsch Alex 21.11. 12:16)
+-- Linien-Diagramme: Gold (alle Charaktere) und Vermoegen = Gold + Ware (Halten + im AH, alle Charaktere).
+-- GoldForeverDB.charGold[char] = { g = Kupfer, t = Zeit }   (letzter bekannter Stand je Charakter)
+-- GoldForeverDB.vermoegen = { {t, g, w}, ... }               (g = Gold aller Chars, w = Ware; hoechstens alle 5 Min.)
+function GF.charGoldMerken()
+  GoldForeverDB.charGold = GoldForeverDB.charGold or {}
+  GoldForeverDB.charGold[charKey()] = { g = GetMoney and GetMoney() or 0, t = time() }
+end
+function GF.goldAlle()
+  local s, je = 0, {}
+  for c, x in pairs(GoldForeverDB.charGold or {}) do s = s + (x.g or 0); je[c] = x.g or 0 end
+  return s, je
+end
+-- Ware anderer Charaktere (Bank-Char): Halten zum Marktwert + deren Auktionen nach Gebuehr
+function GF.wareAndere()
+  local ich, s, je = charKey(), 0, {}
+  for _, p in ipairs(GF.fremdePos or {}) do
+    if p.char and p.char ~= ich and p.n > 0 then
+      local i = p.i or GF.info(p.id)
+      local w = math.floor(((i and GF.wert(i)) or p.ek or 0) * p.n)
+      je[p.char] = (je[p.char] or 0) + w; s = s + w
+    end
+  end
+  for c, a in pairs(GoldForeverDB.imAHc or {}) do
+    if c ~= ich then
+      for _, x in pairs(a.items or {}) do
+        local w = math.floor((x.preis or 0) * 0.95 * (x.n or 0))
+        je[c] = (je[c] or 0) + w; s = s + w
+      end
+    end
+  end
+  return s, je
+end
+-- Punkt aufzeichnen: ware = Wert der Ware des aktuellen Charakters (aus der UI berechnet: Halten + AH)
+function GF.vermoegenMerken(wareIch, zwang)
+  GF.charGoldMerken()
+  local v = GoldForeverDB.vermoegen or {}; GoldForeverDB.vermoegen = v
+  local jetzt = time()
+  if wareIch then GF.wareIchLetzt = wareIch end
+  local g = GF.goldAlle()
+  local w = (GF.wareIchLetzt or 0) + (GF.wareAndere())
+  if not GF.wareIchLetzt and v[#v] then w = v[#v].w end
+  local l = v[#v]
+  -- innerhalb von 5 Min.: letzten Punkt nachfuehren statt neuen anlegen
+  if l and not zwang and jetzt - l.t < 300 then l.g, l.w = g, w; return end
+  v[#v + 1] = { t = jetzt, g = g, w = w }
+  -- aelter als 3 Tage: je Stunde ein Punkt; hoechstens 3000 Punkte
+  if #v > 3000 or (#v % 50 == 0) then
+    local neu, letzteStd = {}, nil
+    for _, x in ipairs(v) do
+      if jetzt - x.t > 3 * 86400 then
+        local h = math.floor(x.t / 3600)
+        if h ~= letzteStd then neu[#neu + 1] = x; letzteStd = h else neu[#neu] = x end
+      else neu[#neu + 1] = x end
+    end
+    while #neu > 3000 do table.remove(neu, 1) end
+    GoldForeverDB.vermoegen = neu
+  end
+end
+-- Verlauf fuer das Diagramm: Punkte ab „von“; vor der ersten Aufzeichnung aus dem Gold-Fluss je Tag zurueckgerechnet
+-- (Tagesende-Stand = heutiges Gold minus alles, was danach dazukam); Ware dort = Einkaufswert der GF-Ware (geschaetzt)
+function GF.vermoegenVerlauf(von)
+  local v = GoldForeverDB.vermoegen or {}
+  local erste = v[1] and v[1].t or time()
+  local pts = {}
+  -- Rueckrechnung Gold je Tag (alle Charaktere mit Geld-Buch und bekanntem Stand)
+  local tage = {}
+  for c, x in pairs(GoldForeverDB.charGold or {}) do
+    local buch = (GoldForeverDB.geld or {})[c] or {}
+    local liste = {}
+    for tag, t in pairs(buch) do local sum = 0; for _, w in pairs(t) do sum = sum + w end; liste[#liste + 1] = { tag = tag, sum = sum } end
+    table.sort(liste, function(a, b) return a.tag > b.tag end)
+    local stand = x.g or 0
+    local abTag = date("%Y-%m-%d", x.t or time())
+    for _, e in ipairs(liste) do
+      if e.tag <= abTag then
+        -- Stand am Ende des Vortags = Stand am Ende dieses Tages minus Fluss dieses Tages
+        local vortag = e.tag
+        tage[vortag] = tage[vortag] or { g = 0 }
+        tage[vortag].g = tage[vortag].g + stand
+        stand = stand - e.sum
+      end
+    end
+  end
+  -- Einkaufswert der GF-Ware je Tagesende (grob, aus dem Bilanz-Buch)
+  local buch = (GoldForeverDB.bilanz or {}).buch or {}
+  local namen = {}; for tag in pairs(tage) do namen[#namen + 1] = tag end
+  table.sort(namen)
+  for _, tag in ipairs(namen) do
+    local y, m, d = tag:match("(%d+)-(%d+)-(%d+)")
+    local ende = time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 23, min = 59 })
+    if ende < erste and (not von or ende >= von) then
+      local n, k = {}, {}
+      for _, x in ipairs(buch) do
+        if x.t <= ende and x.v and x.id then
+          if x.art == "kauf" or x.art == "herg" then n[x.id] = (n[x.id] or 0) + x.n; k[x.id] = (k[x.id] or 0) - (x.betrag or 0)
+          elseif x.art == "verk" and n[x.id] and n[x.id] > 0 then local q = math.min(n[x.id], x.n); k[x.id] = k[x.id] * (n[x.id] - q) / n[x.id]; n[x.id] = n[x.id] - q end
+        end
+      end
+      local w = 0; for _, kk in pairs(k) do w = w + math.max(0, kk) end
+      pts[#pts + 1] = { t = ende, g = tage[tag].g, w = math.floor(w), geschaetzt = true }
+    end
+  end
+  for _, x in ipairs(v) do if not von or x.t >= von then pts[#pts + 1] = x end end
+  -- Startpunkt: letzter Stand vor „von“, damit die Linie links beginnt
+  if von then
+    local vor
+    for _, x in ipairs(v) do if x.t < von then vor = x end end
+    if vor then table.insert(pts, 1, { t = von, g = vor.g, w = vor.w }) end
+  end
+  table.sort(pts, function(a, b) return a.t < b.t end)
+  return pts
+end
+-- Gold-Fluss aller Charaktere nach Herkunft (fuer die Tabelle)
+function GF.geldHerkunftAlle(sekunden)
+  local ab = sekunden and date("%Y-%m-%d", time() - sekunden) or "0000"
+  local s = { loot = 0, quest = 0, haendler = 0, haendlerkauf = 0, ah = 0, ahkauf = 0, sonst = 0 }
+  for _, c in pairs(GoldForeverDB.geld or {}) do
+    for d, t in pairs(c) do if d >= ab then for k, v in pairs(t) do s[k] = (s[k] or 0) + v end end end
+  end
+  return s
+end
 -- Summen fuer einen Zeitraum (Sekunden zurueck, nil = alles; "heute" = seit Mitternacht)
 function GF.geldHerkunft(sekunden)
   local c = (GoldForeverDB.geld or {})[charKey()] or {}
@@ -3777,6 +3899,7 @@ pcall(f.RegisterEvent, f, "MAIL_SEND_SUCCESS")
 pcall(f.RegisterEvent, f, "MAIL_FAILED")
 f:RegisterEvent("CHAT_MSG_LOOT")
 f:RegisterEvent("PLAYER_MONEY")
+f:RegisterEvent("PLAYER_LOGOUT")
 f:RegisterEvent("AUCTION_HOUSE_SHOW")
 f:RegisterEvent("AUCTION_HOUSE_CLOSED")
 f:RegisterEvent("BAG_UPDATE_DELAYED")
@@ -3813,7 +3936,8 @@ f:SetScript("OnEvent", function(_, ev, ...)
     if C_Timer then C_Timer.After(0.5, function() pcall(haendlerMerken) end) else pcall(haendlerMerken) end
     return
   end
-  if ev == "PLAYER_MONEY" then tagPruefen(); pcall(GF.geldBuchen); return end
+  if ev == "PLAYER_MONEY" then tagPruefen(); pcall(GF.geldBuchen); pcall(GF.vermoegenMerken); return end
+  if ev == "PLAYER_LOGOUT" then pcall(GF.vermoegenMerken, nil, true); return end
   if ev == "AUCTION_HOUSE_SHOW" then
     pcall(kaufHaken); pcall(ahAuf)
     if C_Timer and C_AuctionHouse and C_AuctionHouse.QueryOwnedAuctions then C_Timer.After(1, function() pcall(C_AuctionHouse.QueryOwnedAuctions, {}) end) end
@@ -3871,6 +3995,9 @@ f:SetScript("OnEvent", function(_, ev, ...)
     if C_Timer then
       C_Timer.After(8, function() pcall(GF.zieleCheck) end)
       if C_Timer.NewTicker then C_Timer.NewTicker(300, function() pcall(GF.zieleCheck) end) end
+      -- 2.63: Vermoegen alle 10 Min. aufzeichnen (Ware aus der UI-Berechnung)
+      C_Timer.After(10, function() pcall(function() GF.vermoegenMerken(GF.wareIch and GF.wareIch(), true) end) end)
+      if C_Timer.NewTicker then C_Timer.NewTicker(600, function() pcall(function() GF.vermoegenMerken(GF.wareIch and GF.wareIch()) end) end) end
     end
     local d = D()
     local alter = d.stand and math.floor((time() - d.stand) / 3600) or nil

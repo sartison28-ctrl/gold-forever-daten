@@ -152,11 +152,11 @@ table.insert(GoldForeverDB.bilanz.buch, { t = JETZT - 100, art = "verk", id = 76
 GF.zeigeAnsicht("bilanz")
 local b = GoldForeverFenster.ansichten.bilanz
 local function ohne(x) return (x or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "¤") end
-zeige("Bilanz Profit: " .. ohne(b.ergebnis.wert:GetText()) .. " | " .. ohne(b.jeReiter:GetText()))
-zeige("Herkunft: " .. ohne(b.herkunft:GetText()))
-for k, kz in ipairs(b.vier) do zeige("  " .. ohne(kz.oben:GetText()) .. " = " .. ohne(kz.wert:GetText())) end
+zeige("Gold-Diagramm: " .. ohne(b.diaGold.wert:GetText()) .. " | Vermögen: " .. ohne(b.diaVerm.wert:GetText()) .. " | " .. ohne(b.jeReiter:GetText()))
+for _, z in ipairs(b.tabGold.zeilen) do if z:IsShown() then zeige("  G: " .. ohne(z.l:GetText()) .. " = " .. ohne(z.c[1]:GetText()) .. " / " .. ohne(z.c[2]:GetText()) .. " / " .. ohne(z.c[3]:GetText())) end end
+for _, z in ipairs(b.tabVerm.zeilen) do if z:IsShown() then zeige("  V: " .. ohne(z.l:GetText()) .. " = " .. ohne(z.c[1]:GetText()) .. " " .. ohne(z.c[2]:GetText())) end end
 for _, z in ipairs(b.zeilen) do if z:IsShown() then zeige("  Zeile: " .. ohne(z.name:GetText()) .. " | " .. ohne(z.mitte:GetText()) .. " | " .. ohne(z.betrag:GetText())) end end
-b.vier[1]._scripts.OnClick(b.vier[1])
+b.tabGold.zeilen[1]._scripts.OnClick(b.tabGold.zeilen[1])
 for _, z in ipairs(b.zeilen) do if z:IsShown() then zeige("  Filter Verkauft: " .. ohne(z.name:GetText()) .. " | " .. ohne(z.betrag:GetText())) end end
 zeige("Ende Bilanz ok")
 -- 2.53.3: Herstellen nach Vorschlag buchen + Rückgängig

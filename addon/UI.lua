@@ -1460,6 +1460,181 @@ function ANSICHTEN.raid(v, s, d)
   return y + h
 end
 
+-- 2.63: Wert der Ware des aktuellen Charakters (fuer Vermoegen): gekaufte Ware (Tasche/Bank/Post, Marktwert),
+-- eigene Ware (Farm/Loot, Verkaufswert), alle eigenen Auktionen (Preis nach Gebuehr)
+function GF.wareIchTeile()
+  local halten, eigen, ah = 0, 0, 0
+  local posN = {}
+  for _, p in ipairs(GF.positionen()) do
+    posN[p.id] = p.n
+    local n = p.n - (p.imAH or 0)
+    if n > 0 then halten = halten + math.floor(((p.i and GF.wert(p.i)) or p.ek or 0) * n) end
+  end
+  for _, liste in ipairs({ GF.verkaufListe(), GF.warteListe() }) do
+    for _, v in ipairs(liste) do
+      local n = v.n - (posN[v.id] or 0)
+      if n > 0 and v.w then eigen = eigen + math.floor(v.w * n) end
+    end
+  end
+  local A = GF.ahDaten()
+  for _, x in pairs((A and A.items) or {}) do ah = ah + math.floor((x.preis or 0) * 0.95 * (x.n or 0)) end
+  return halten, eigen, ah
+end
+function GF.wareIch() local a, b, c = GF.wareIchTeile(); return a + b + c end
+
+-- 2.63 Linien-Diagramm (Wunsch Alex: „richtige Liniendiagramme, nicht diese Balken“)
+local DIA_H = 86
+local function diagramm(parent, titel)
+  local c = CreateFrame("Frame", nil, parent); c:SetSize(INNEN, 20 + DIA_H + 16)
+  c.titel = text(c, 12); c.titel:SetPoint("TOPLEFT", 0, 0); c.titel:SetText(titel)
+  c.diff = text(c, 10); c.diff:SetPoint("LEFT", c.titel, "RIGHT", 8, 0)
+  c.wert = text(c, 12); c.wert:SetPoint("TOPRIGHT", 0, 0); c.wert:SetJustifyH("RIGHT")
+  local f = CreateFrame("Frame", nil, c); f:SetSize(INNEN, DIA_H); f:SetPoint("TOPLEFT", 0, -20)
+  f.bg = f:CreateTexture(nil, "BACKGROUND"); f.bg:SetAllPoints(); f.bg:SetColorTexture(1, 1, 1, 0.03)
+  f.gitter = {}
+  for k = 1, 3 do
+    local g = f:CreateTexture(nil, "BORDER"); g:SetHeight(1); g:SetColorTexture(1, 1, 1, 0.06)
+    g:SetPoint("TOPLEFT", 0, -math.floor(DIA_H * k / 4)); g:SetPoint("TOPRIGHT", 0, -math.floor(DIA_H * k / 4)); f.gitter[k] = g
+  end
+  f.ymax = text(f, 9, F.grau); f.ymax:SetPoint("TOPLEFT", 4, -3)
+  f.ymin = text(f, 9, F.grau); f.ymin:SetPoint("BOTTOMLEFT", 4, 3)
+  c.xa = text(c, 9, F.grau); c.xa:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 0, -3)
+  c.xm = text(c, 9, F.grau); c.xm:SetPoint("TOP", f, "BOTTOM", 0, -3)
+  c.xb = text(c, 9, F.grau); c.xb:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, -3)
+  c.leer = text(f, 10, F.grau); c.leer:SetPoint("CENTER"); c.leer:SetText("Noch zu wenig Daten – die Linie entsteht ab jetzt (alle 10 Min. ein Punkt).")
+  f.linien = { {}, {} }; f.fuell = {}
+  f.punkt = f:CreateTexture(nil, "OVERLAY"); f.punkt:SetSize(6, 6); f.punkt:SetTexture("Interface\\Buttons\\WHITE8X8"); f.punkt:Hide()
+  f.senk = f:CreateTexture(nil, "ARTWORK"); f.senk:SetWidth(1); f.senk:SetColorTexture(1, 1, 1, 0.25); f.senk:Hide()
+  f:EnableMouse(true)
+  f:SetScript("OnEnter", function(self)
+    self:SetScript("OnUpdate", function(me)
+      local P = me.pts; if not P or #P < 2 then return end
+      local x = GetCursorPosition() / me:GetEffectiveScale() - me:GetLeft()
+      local best, bd
+      for k, q in ipairs(P) do local d = math.abs(q.x - x); if not bd or d < bd then best, bd = k, d end end
+      local q = P[best]
+      me.punkt:ClearAllPoints(); me.punkt:SetPoint("CENTER", me, "BOTTOMLEFT", q.x, q.y); me.punkt:SetVertexColor(me.farbe[1], me.farbe[2], me.farbe[3]); me.punkt:Show()
+      me.senk:ClearAllPoints(); me.senk:SetPoint("TOP", me, "TOPLEFT", q.x, 0); me.senk:SetPoint("BOTTOM", me, "BOTTOMLEFT", q.x, 0); me.senk:Show()
+      if me.tipBest ~= best then
+        me.tipBest = best
+        GameTooltip:SetOwner(me, "ANCHOR_TOP")
+        GameTooltip:AddLine(GF.WT[tonumber(date("%w", q.t)) + 1] .. " " .. date("%d.%m. %H:%M", q.t) .. (q.geschaetzt and H.grau .. "  (Tagesende, geschätzt)" .. ENDE or ""))
+        for _, z in ipairs(me.tipZeilen(q)) do GameTooltip:AddDoubleLine(z[1], z[2], F.grau[1], F.grau[2], F.grau[3], F.hell[1], F.hell[2], F.hell[3]) end
+        GameTooltip:Show()
+      end
+    end)
+  end)
+  f:SetScript("OnLeave", function(self) self:SetScript("OnUpdate", nil); self.tipBest = nil; self.punkt:Hide(); self.senk:Hide(); GameTooltip:Hide() end)
+  c.f = f
+  return c
+end
+-- reihen = { { werte = {..}, farbe = {r,g,b}, alpha, fuell = true } }, alle gleich lang wie pts
+local function diagrammZeichnen(c, pts, reihen, tipZeilen)
+  local f = c.f
+  for _, satz in ipairs(f.linien) do for _, ln in ipairs(satz) do ln:Hide() end end
+  for _, t in ipairs(f.fuell) do t:Hide() end
+  f.pts = nil
+  if #pts < 2 then c.leer:Show(); f.ymax:SetText(""); f.ymin:SetText(""); c.xa:SetText(""); c.xm:SetText(""); c.xb:SetText(""); return end
+  c.leer:Hide()
+  local lo, hi = math.huge, -math.huge
+  for _, r in ipairs(reihen) do for _, w in ipairs(r.werte) do lo = math.min(lo, w); hi = math.max(hi, w) end end
+  if hi - lo < 10000 then local m = (hi + lo) / 2; lo, hi = m - 5000, m + 5000 end
+  local pad = (hi - lo) * 0.08; lo, hi = math.max(0, lo - pad), hi + pad
+  local t0, t1 = pts[1].t, pts[#pts].t
+  if t1 <= t0 then t1 = t0 + 1 end
+  local W = INNEN
+  local function X(t) return (t - t0) / (t1 - t0) * W end
+  local function Y(w) return 2 + (w - lo) / (hi - lo) * (DIA_H - 4) end
+  f.ymax:SetText(betragKurz(math.floor(hi))); f.ymin:SetText(betragKurz(math.floor(lo)))
+  local function ts(t) return (t1 - t0 > 36 * 3600) and date("%d.%m.", t) or date("%H:%M", t) end
+  c.xa:SetText(ts(t0)); c.xb:SetText(ts(t1)); c.xm:SetText(ts(math.floor((t0 + t1) / 2)))
+  local fi = 0
+  for ri, r in ipairs(reihen) do
+    local satz = f.linien[ri] or {}; f.linien[ri] = satz
+    for k = 2, #pts do
+      local ln = satz[k - 1]
+      if not ln and f.CreateLine then ln = f:CreateLine(nil, "ARTWORK"); satz[k - 1] = ln end
+      if ln then
+        ln:SetStartPoint("BOTTOMLEFT", f, X(pts[k - 1].t), Y(r.werte[k - 1])); ln:SetEndPoint("BOTTOMLEFT", f, X(pts[k].t), Y(r.werte[k]))
+        ln:SetThickness(r.dick or 2); ln:SetColorTexture(r.farbe[1], r.farbe[2], r.farbe[3], r.alpha or 1); ln:Show()
+      end
+      if r.fuell then
+        -- Flaeche unter der Linie: schmale Saeulen je Abschnitt
+        fi = fi + 1
+        local t = f.fuell[fi]; if not t then t = f:CreateTexture(nil, "BORDER"); f.fuell[fi] = t end
+        local xa, xb = X(pts[k - 1].t), X(pts[k].t)
+        local h = (Y(r.werte[k - 1]) + Y(r.werte[k])) / 2
+        t:ClearAllPoints(); t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", xa, 0); t:SetSize(math.max(1, xb - xa), math.max(1, h))
+        t:SetColorTexture(r.farbe[1], r.farbe[2], r.farbe[3], 0.10); t:Show()
+      end
+    end
+  end
+  local haupt = reihen[1]
+  f.farbe = haupt.farbe
+  f.pts = {}
+  for k, q in ipairs(pts) do f.pts[k] = { x = X(q.t), y = Y(haupt.werte[k]), t = q.t, q = q, geschaetzt = q.geschaetzt } end
+  f.tipZeilen = function(p) return tipZeilen(p.q) end
+end
+-- hoechstens 120 Punkte: je Zeitfenster der letzte Punkt
+local function ausduennen(pts)
+  if #pts <= 120 then return pts end
+  local t0, t1 = pts[1].t, pts[#pts].t
+  local schritt = (t1 - t0) / 119
+  local aus, letzt = {}, nil
+  for _, q in ipairs(pts) do
+    local b = math.floor((q.t - t0) / schritt)
+    if b ~= letzt then aus[#aus + 1] = q; letzt = b else aus[#aus] = q end
+  end
+  return aus
+end
+-- 2.63 Tabelle: Zeilen mit Bezeichnung + bis zu 3 rechtsbuendigen Spalten
+local TAB_H = 15
+local function tabelle(parent, spalten, n)
+  local t = CreateFrame("Frame", nil, parent); t:SetWidth(INNEN)
+  t.titel = text(t, 12); t.titel:SetPoint("TOPLEFT", 0, 0)
+  t.kopf = {}
+  for k, sp in ipairs(spalten) do
+    local h = text(t, 10, F.grau); h:SetPoint("TOPRIGHT", t, "TOPLEFT", sp, -2); h:SetJustifyH("RIGHT"); t.kopf[k] = h
+  end
+  t.zeilen = {}
+  for k = 1, n do
+    local z = CreateFrame("Button", nil, t); z:SetSize(INNEN, TAB_H); z:SetPoint("TOPLEFT", 0, -(18 + (k - 1) * TAB_H))
+    z.hl = flaeche(z, 0.05); z.hl:Hide()
+    z.linie = z:CreateTexture(nil, "BORDER"); z.linie:SetHeight(1); z.linie:SetPoint("TOPLEFT"); z.linie:SetPoint("TOPRIGHT"); z.linie:SetColorTexture(1, 1, 1, 0.12)
+    z.l = text(z, 11); z.l:SetPoint("LEFT", 4, 0)
+    z.c = {}
+    for j, sp in ipairs(spalten) do local c = text(z, 11); c:SetPoint("RIGHT", z, "LEFT", sp, 0); c:SetJustifyH("RIGHT"); z.c[j] = c end
+    z:SetScript("OnEnter", function(self)
+      if not self.tipp and not self.klick then return end
+      self.hl:Show()
+      if self.tipp then GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:AddLine(self.tipp, 1, 1, 1, true); if self.klick then GameTooltip:AddLine("Klick: Details", F.gold[1], F.gold[2], F.gold[3]) end; GameTooltip:Show() end
+    end)
+    z:SetScript("OnLeave", function(self) self.hl:Hide(); GameTooltip:Hide() end)
+    z:SetScript("OnClick", function(self) if self.klick then self.klick() end end)
+    z:Hide(); t.zeilen[k] = z
+  end
+  return t
+end
+-- rows = { { l = Text, c = {..}, summe = true, tipp, klick } }
+local function tabelleFuellen(t, titel, kopf, rows)
+  t.titel:SetText(titel)
+  for k, h in ipairs(t.kopf) do h:SetText(kopf[k] or "") end
+  local n = 0
+  for k, z in ipairs(t.zeilen) do
+    local r = rows[k]
+    if r then
+      n = k
+      z.l:SetText(r.summe and (H.hell .. r.l .. ENDE) or (H.grau .. r.l .. ENDE))
+      for j, c in ipairs(z.c) do c:SetText((r.c or {})[j] or "") end
+      z.linie:SetShown(r.summe or false); z.tipp, z.klick = r.tipp, r.klick
+      z:Show()
+    else z:Hide() end
+  end
+  local h = 18 + n * TAB_H
+  t:SetHeight(h); t.hoehe = h
+  return h
+end
+
 -- Bilanz
 local ZEITRAUM = { { "heute", "Heute" }, { "7", "7 Tage" }, { "30", "30 Tage" }, { "alle", "Gesamt" } }
 local function sekundenFuer(z)
@@ -1539,36 +1714,75 @@ function ANSICHTEN.bilanz(v)
   local r = GF.bilanz(sekundenFuer(wahl))
   -- 2.53 (Wunsch Alex): Bilanz wie TSM – alle Käufe und Verkäufe, dazu „davon durch Gold Forever“
   local A = GF.handelZeitraum(sekundenFuer(wahl))
-  v.ergebnis.wert:SetText(plusMinus(A.profit))
-  local werte = {
-    { "Verkauft (" .. A.nV .. ")", H.gruen .. "+" .. betrag(A.ein) .. ENDE },
-    { "Gekauft (" .. A.nK .. ")", H.rot .. "-" .. betrag(A.aus) .. ENDE },
-    { "davon durch Gold Forever", plusMinus(r.ergebnis) },
-    { "Gekaufte Ware noch da", H.hell .. betrag(r.bestand) .. ENDE },
+  -- 2.63: Diagramme
+  local sek = sekundenFuer(wahl)
+  local von = sek and (time() - sek) or nil
+  local halten, eigen, ahW = GF.wareIchTeile()
+  pcall(GF.vermoegenMerken, halten + eigen + ahW)
+  local pts = ausduennen(GF.vermoegenVerlauf(von))
+  local gW, vW = {}, {}
+  for k, q in ipairs(pts) do gW[k] = q.g or 0; vW[k] = (q.g or 0) + (q.w or 0) end
+  local goldJetzt, goldJe = GF.goldAlle()
+  local andereW, andereJe = GF.wareAndere()
+  local vermJetzt = goldJetzt + halten + eigen + ahW + andereW
+  local function diffText(a, b2) if not a then return "" end local d = b2 - a; return (d >= 0 and H.gruen .. "+" or H.rot .. "-") .. betrag(math.abs(d)) .. ENDE .. H.grau .. " im Zeitraum" .. ENDE end
+  v.diaGold.wert:SetText(H.gruen .. betrag(goldJetzt) .. ENDE)
+  v.diaGold.diff:SetText(pts[1] and diffText(gW[1], goldJetzt) or "")
+  diagrammZeichnen(v.diaGold, pts, { { werte = gW, farbe = F.gruen, fuell = true } }, function(q)
+    return { { "Gold (alle Charaktere)", betrag(q.g or 0) } }
+  end)
+  v.diaVerm.wert:SetText(H.blau .. betrag(vermJetzt) .. ENDE)
+  v.diaVerm.diff:SetText(pts[1] and diffText(vW[1], vermJetzt) or "")
+  diagrammZeichnen(v.diaVerm, pts, { { werte = vW, farbe = F.blau, fuell = true }, { werte = gW, farbe = F.gruen, alpha = 0.45, dick = 1 } }, function(q)
+    return { { "Vermögen", betrag((q.g or 0) + (q.w or 0)) }, { "Gold", betrag(q.g or 0) }, { q.geschaetzt and "Ware (zum Einkaufspreis)" or "Ware", betrag(q.w or 0) } }
+  end)
+  -- Tabelle 1: Gold – woher (wie TSM: Heute / 7 Tage / Gesamt), alle Charaktere
+  local h1, h7, hA = GF.geldHerkunftAlle(sekundenFuer("heute")), GF.geldHerkunftAlle(7 * 86400), GF.geldHerkunftAlle(nil)
+  local function pm(w) if (w or 0) == 0 then return H.grau .. "—" .. ENDE end return plusMinus(w) end
+  local function sum(t) local x = 0; for _, w in pairs(t) do x = x + w end; return x end
+  local rG = GF.bilanz(sekundenFuer("heute")); local r7 = GF.bilanz(7 * 86400); local rA = GF.bilanz(nil)
+  local rowsG = {
+    { l = "AH-Verkäufe", c = { pm(h1.ah), pm(h7.ah), pm(hA.ah) }, tipp = "Gold aus verkauften Auktionen (aus dem Briefkasten genommen).", klick = function() GF.bilanzFilter = { art = "alleVerk", titel = "Verkauft" }; GF.aktualisieren() end },
+    { l = "AH-Einkäufe", c = { pm(h1.ahkauf), pm(h7.ahkauf), pm(hA.ahkauf) }, tipp = "Alle Käufe im Auktionshaus.", klick = function() GF.bilanzFilter = { art = "alleKauf", titel = "Gekauft" }; GF.aktualisieren() end },
+    { l = "Händler", c = { pm(h1.haendler + h1.haendlerkauf), pm(h7.haendler + h7.haendlerkauf), pm(hA.haendler + hA.haendlerkauf) }, tipp = "Verkäufe an Händler minus Einkäufe bei Händlern." },
+    { l = "Quests", c = { pm(h1.quest), pm(h7.quest), pm(hA.quest) } },
+    { l = "Loot", c = { pm(h1.loot), pm(h7.loot), pm(hA.loot) } },
+    { l = "Post & Sonstiges", c = { pm(h1.sonst), pm(h7.sonst), pm(hA.sonst) }, tipp = "Gold per Post (auch zwischen deinen Charakteren), Reparaturen, Porto, Einstellgebühren, Reisen …" },
+    { l = "Gold-Veränderung", c = { pm(sum(h1)), pm(sum(h7)), pm(sum(hA)) }, summe = true, tipp = "Summe aller Zu- und Abgänge = so viel mehr (oder weniger) Gold hast du." },
+    { l = "davon Gewinn aus GF-Käufen", c = { pm(rG.ergebnis), pm(r7.ergebnis), pm(rA.ergebnis) }, tipp = "Realisierter Gewinn aus Käufen nach Gold-Forever-Vorschlag bzw. Sniper (Verkauf nach Gebühr minus Einkauf).", klick = function() GF.bilanzFilter = { art = "gf", titel = "durch Gold Forever" }; GF.aktualisieren() end },
   }
+  local hTab1 = tabelleFuellen(v.tabGold, H.gold .. "Gold – woher es kommt" .. ENDE, { "Heute", "7 Tage", "Gesamt" }, rowsG)
+  -- Tabelle 2: Vermoegen – woraus es besteht
+  local ich = GF.charKey()
+  local function anteil(w) return vermJetzt > 0 and (H.grau .. math.floor(w / vermJetzt * 100 + 0.5) .. " %" .. ENDE) or "" end
+  local rowsV = {}
+  local chars = {}; for c in pairs(goldJe) do chars[#chars + 1] = c end
+  table.sort(chars, function(a2, b2) if a2 == ich then return true elseif b2 == ich then return false end return a2 < b2 end)
+  for _, c in ipairs(chars) do rowsV[#rowsV + 1] = { l = "Gold – " .. c, c = { H.gruen .. betrag(goldJe[c]) .. ENDE, anteil(goldJe[c]) } } end
+  rowsV[#rowsV + 1] = { l = "Gekaufte Ware – Tasche, Bank, Post", c = { H.hell .. betrag(halten) .. ENDE, anteil(halten) }, tipp = "Ware, die du nach Vorschlag gekauft hast und noch nicht im AH liegt – zum aktuellen Marktwert.", klick = function() GF.bilanzFilter = { art = "bestand", titel = "Gekaufte Ware" }; GF.aktualisieren() end }
+  rowsV[#rowsV + 1] = { l = "Eigene Ware (Farm/Loot)", c = { H.hell .. betrag(eigen) .. ENDE, anteil(eigen) }, tipp = "Ware aus Farm/Loot, die Gold Forever verkaufen würde (Verkaufswert)." }
+  rowsV[#rowsV + 1] = { l = "Im Auktionshaus", c = { H.hell .. betrag(ahW) .. ENDE, anteil(ahW) }, tipp = "Alle deine laufenden Auktionen – Erlös nach 5 % Gebühr, wenn alles verkauft wird." }
+  for c, w in pairs(andereJe) do rowsV[#rowsV + 1] = { l = "Ware – " .. c, c = { H.hell .. betrag(w) .. ENDE, anteil(w) }, tipp = "Ware beim Charakter " .. c .. " (Halten + Auktionen), Stand seines letzten Logins." } end
+  rowsV[#rowsV + 1] = { l = "Vermögen", c = { H.blau .. betrag(vermJetzt) .. ENDE, "" }, summe = true }
+  local vv = GF.vermoegenVerlauf(time() - 86400)
+  local v7 = GF.vermoegenVerlauf(time() - 7 * 86400)
+  local function gegen(liste) local q = liste[1]; if not q then return H.grau .. "—" .. ENDE end return plusMinus(vermJetzt - ((q.g or 0) + (q.w or 0))) end
+  rowsV[#rowsV + 1] = { l = "gegenüber vor 24 Std.", c = { gegen(vv), "" } }
+  rowsV[#rowsV + 1] = { l = "gegenüber vor 7 Tagen", c = { gegen(v7), "" } }
+  local hTab2 = tabelleFuellen(v.tabVerm, H.gold .. "Vermögen – woraus es besteht" .. ENDE, { "Wert", "Anteil" }, rowsV)
+  local yT = 30 + 122 + 12 + 122 + 16
+  v.tabGold:ClearAllPoints(); v.tabGold:SetPoint("TOPLEFT", 0, -yT)
+  yT = yT + hTab1 + 16
+  v.tabVerm:ClearAllPoints(); v.tabVerm:SetPoint("TOPLEFT", 0, -yT)
+  yT = yT + hTab2 + 14
+  v.jeReiter:ClearAllPoints(); v.jeReiter:SetPoint("TOPLEFT", 0, -yT)
+  v.top:ClearAllPoints(); v.top:SetPoint("TOPRIGHT", 0, -(yT - 3))
+  v.lern:ClearAllPoints(); v.lern:SetPoint("TOPLEFT", 0, -(yT + 22))
+  v.yOben = yT + 22 + 34
   local filter = GF.bilanzFilter
-  for k, kz in ipairs(v.vier) do
-    kz.oben:SetText(werte[k][1]); kz.wert:SetText(werte[k][2])
-    kz.r:farbe(F.gold, 0.8); kz.r:zeigen(filter and filter.art == kz.art or false)
-  end
-  -- Anteil-Leisten: Länge im Verhältnis zum größten der vier Werte
-  local roh = { { A.ein, F.gruen }, { A.aus, F.rot }, { r.ergebnis, (r.ergebnis or 0) >= 0 and F.gruen or F.rot }, { r.bestand, F.hell } }
-  local groesst = 1; for _, w in ipairs(roh) do groesst = math.max(groesst, math.abs(w[1] or 0)) end
-  for k, kz in ipairs(v.vier) do
-    local w = math.abs(roh[k][1] or 0)
-    local laenge = math.floor(198 * w / groesst + 0.5)
-    kz.fuell:SetShown(laenge > 0); kz.fuell:SetWidth(math.max(1, laenge))
-    kz.fuell:SetColorTexture(roh[k][2][1], roh[k][2][2], roh[k][2][3], 0.7)
-  end
-  verlaufZeichnen(v.verlauf, verlaufDaten(wahl, A.liste, GF.bilanzDaten().start))
   -- Top-Verkauf / Top-Einkauf (wie TSM)
   v.jeReiter:SetText(H.grau .. "Top-Verkauf: " .. ENDE .. (A.topV and (H.hell .. itemName(A.topV.id) .. ENDE .. " " .. H.gruen .. "+" .. betrag(A.topV.w) .. ENDE) or "—") ..
     H.grau .. "   ·   Top-Einkauf: " .. ENDE .. (A.topK and (H.hell .. itemName(A.topK.id) .. ENDE .. " " .. H.rot .. "-" .. betrag(A.topK.w) .. ENDE) or "—"))
-  -- Gold nach Herkunft (2.53)
-  local hk = GF.geldHerkunft(sekundenFuer(wahl))
-  local HK = { { "loot", "Loot" }, { "quest", "Quests" }, { "haendler", "Händler" }, { "ah", "AH" }, { "ahkauf", "AH-Käufe" }, { "haendlerkauf", "Händler-Kauf" }, { "sonst", "Sonstiges" } }
-  local teile = {}
-  for _, z in ipairs(HK) do local w = hk[z[1]] or 0; if w ~= 0 then teile[#teile + 1] = H.grau .. z[2] .. " " .. ENDE .. plusMinus(w) end end
   -- 2.54 Lernsystem: bewährte Items und Vorsicht-Items
   local L = GF.lernen()
   local gut, schlecht = {}, {}
@@ -1579,7 +1793,6 @@ function ANSICHTEN.bilanz(v)
   local function namen(t) local n = {}; for k = 1, math.min(5, #t) do n[#n + 1] = itemName(t[k].id) end; return table.concat(n, ", ") .. (#t > 5 and (" +" .. (#t - 5)) or "") end
   v.lern:SetText(H.gruen .. "Bewährt (" .. #gut .. "): " .. ENDE .. H.hell .. (#gut > 0 and namen(gut) or "noch keins") .. ENDE ..
     "\n" .. H.orange .. "Vorsicht (" .. #schlecht .. "): " .. ENDE .. H.hell .. (#schlecht > 0 and namen(schlecht) or "keins") .. ENDE)
-  v.herkunft:SetText(H.gold .. "Gold nach Herkunft:  " .. ENDE .. (#teile > 0 and table.concat(teile, H.grau .. "  ·  " .. ENDE) or (H.grau .. "wird ab 2.53 mitgeschrieben" .. ENDE)))
   -- Geschäfte: alle, oder gefiltert nach Kachel (Art) bzw. Balken (Zeitraum)
   local zeilen = {}
   local WAS = { flip = { "gruen", "verkauft" }, farm = { "gruen", "Mehrerlös" }, kauf = { "lila", "gekauft" } }
@@ -1693,8 +1906,8 @@ function ANSICHTEN.bilanz(v)
   local inserate = 0; for _, x in pairs(b.inserat) do inserate = inserate + (x.v or 0) end
   v.fuss:SetText(H.grau .. "Mitgeschrieben seit " .. zeitpunkt(b.start) .. (inserate > 0 and ("  ·  noch im AH nach Vorschlag: " .. inserate .. " Stück") or "") ..
     (r.ohne > 0 and ("\n" .. r.ohne .. (r.ohne == 1 and " Geschäft" or " Geschäfte") .. " ohne Vorschlag – nicht mitgezählt") or "") .. ENDE)
-  -- Zeitraum 20, +8, Ergebnis 96, +8, 2 × 44 (+8), +8, Je Reiter 16, +20, Liste, +8, Fuß 32
-  local y = 20 + 8 + 96 + 8 + 44 + 8 + 44 + 8 + 16 + 8 + 28 + 4 + 30 + ABSTAND
+  -- 2.63: unter Diagrammen, Tabellen, Top-Zeile und Lernzeilen
+  local y = v.yOben + ABSTAND
   v.liste:ClearAllPoints(); v.liste:SetPoint("TOPLEFT", 0, -y)
   y = y + lh + 8
   v.fuss:ClearAllPoints(); v.fuss:SetPoint("TOPLEFT", 0, -y)
@@ -1796,9 +2009,10 @@ function GF.aktualisieren()
   local ein, aus, prof = GF.handelHeute()
   fenster.k.gold.wert:SetText(H.hell .. betragKurz(GetMoney()) .. ENDE)
   -- 2.62.1: statt Kaufbudget der Wert deiner Ware (Halten + im AH, nach Gebühr) – Gold + Ware = Vermögen
-  local ware = (s.haltWert or 0) + (s.ahWert or 0)
+  local wh, we, wa = GF.wareIchTeile()
+  local ware = wh + we + wa
   fenster.k.budget.wert:SetText(H.lila .. betragKurz(ware) .. ENDE)
-  fenster.k.budget.tipp = "Wert deiner gekauften Ware: Halten " .. GF.geld(s.haltWert or 0) .. " + im AH " .. GF.geld(s.ahWert or 0) .. " (nach Gebühr). Vermögen mit Gold: " .. GF.geld(ware + (GetMoney and GetMoney() or 0)) .. "."
+  fenster.k.budget.tipp = "Wert deiner Ware: gekauft " .. GF.geld(wh) .. " + eigene " .. GF.geld(we) .. " + im AH " .. GF.geld(wa) .. " (nach Gebühr). Vermögen mit Gold: " .. GF.geld(ware + (GetMoney and GetMoney() or 0)) .. ". Klick: Bilanz."
   fenster.k.ein.wert:SetText(ein > 0 and (H.gruen .. betragKurz(ein) .. ENDE) or (H.grau .. "—" .. ENDE))
   fenster.k.profit.wert:SetText((ein > 0 or aus > 0) and plusMinusKurz(prof) or (H.grau .. "—" .. ENDE))
   fenster.k.profit.tipp = "Einnahmen " .. GF.geld(ein) .. " minus Einkäufe " .. GF.geld(aus) .. " (heute). Gold seit Tagesbeginn: " .. GF.geld(GF.tagesbilanz() or 0) .. ". Klick: Bilanz."
@@ -1987,67 +2201,20 @@ local function baueAnsichten(kind)
     zb:SetScript("OnClick", function(self) GoldForeverDB.bilanzZeit = self.wert; GF.bilanzFilter = nil; GF.aktualisieren() end)
     b.zeit[k] = zb
   end
-  b.ergebnis = kennzahl(b, INNEN, 96); b.ergebnis:SetPoint("TOPLEFT", 0, -28); b.ergebnis:EnableMouse(false)
-  b.ergebnis.oben:SetText("Profit – alle Käufe und Verkäufe"); b.ergebnis.oben:SetPoint("TOP", 0, -8); b.ergebnis.wert:SetPoint("TOP", 0, -26)
-  b.ergebnis:SetScript("OnEnter", nil)
-  -- Verlauf: kleine Balken je Stunde/Tag (Einnahmen − Ausgaben), Nulllinie grau
-  local c = CreateFrame("Frame", nil, b.ergebnis); c:SetSize(VERLAUF_B, VERLAUF_H); c:SetPoint("TOPLEFT", 16, -52)
-  c.linie = c:CreateTexture(nil, "BORDER"); c.linie:SetHeight(1); c.linie:SetColorTexture(1, 1, 1, 0.12)
-  c.balken = {}
-  for k = 1, 31 do
-    local bk = CreateFrame("Frame", nil, c); bk:EnableMouse(true)
-    bk.t = bk:CreateTexture(nil, "ARTWORK"); bk.t:SetAllPoints()
-    bk:SetScript("OnEnter", function(self)
-      self.t:SetAlpha(1)
-      GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:AddLine(self.label or "")
-      GameTooltip:AddDoubleLine("Ergebnis", plusMinus(self.wert or 0), F.grau[1], F.grau[2], F.grau[3])
-      if (self.ein or 0) > 0 then GameTooltip:AddDoubleLine("Verkäufe", H.gruen .. "+" .. betrag(self.ein) .. ENDE, F.grau[1], F.grau[2], F.grau[3]) end
-      if (self.aus or 0) < 0 then GameTooltip:AddDoubleLine("Einkäufe", H.rot .. "-" .. betrag(self.aus) .. ENDE, F.grau[1], F.grau[2], F.grau[3]) end
-      GameTooltip:AddLine("Alle Käufe und Verkäufe im AH (wie TSM).", F.grau[1], F.grau[2], F.grau[3], true)
-      GameTooltip:AddLine("Klick: Geschäfte in diesem Zeitraum zeigen", F.gold[1], F.gold[2], F.gold[3])
-      GameTooltip:Show()
-    end)
-    bk:SetScript("OnLeave", function(self) self.t:SetAlpha(0.7); GameTooltip:Hide() end)
-    bk:SetScript("OnMouseUp", function(self)
-      if not self.von then return end
-      local f = GF.bilanzFilter
-      if f and f.von == self.von then GF.bilanzFilter = nil else GF.bilanzFilter = { von = self.von, bis = self.bis, titel = self.label } end
-      GF.aktualisieren()
-    end)
-    bk:Hide(); c.balken[k] = bk
-  end
-  b.verlauf = c
-  b.vier = {}
-  for k = 1, 4 do
-    local kz = kennzahl(b, 214, 44)
-    kz.art = ({ "alleVerk", "alleKauf", "gf", "bestand" })[k]
-    kz:SetScript("OnClick", function(self)
-      local f = GF.bilanzFilter
-      if f and f.art == self.art then GF.bilanzFilter = nil else GF.bilanzFilter = { art = self.art, titel = self.oben:GetText() } end
-      GF.aktualisieren()
-    end)
-    kz:SetScript("OnEnter", function(self)
-      self.bg:SetColorTexture(1, 1, 1, 0.06)
-      GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:AddLine("Klick: Details zeigen"); GameTooltip:Show()
-    end)
-    kz:SetScript("OnLeave", function(self) self.bg:SetColorTexture(1, 1, 1, 0.03); GameTooltip:Hide() end)
-    kz:SetPoint("TOPLEFT", ((k - 1) % 2) * 222, -(132 + math.floor((k - 1) / 2) * 52))
-    -- Anteil-Leiste unten in der Kachel (2 hoch, 8 Rand)
-    kz.spur = kz:CreateTexture(nil, "BORDER"); kz.spur:SetHeight(2); kz.spur:SetPoint("BOTTOMLEFT", 8, 6); kz.spur:SetPoint("BOTTOMRIGHT", -8, 6)
-    kz.spur:SetColorTexture(1, 1, 1, 0.06)
-    kz.fuell = kz:CreateTexture(nil, "ARTWORK"); kz.fuell:SetHeight(2); kz.fuell:SetPoint("BOTTOMLEFT", 8, 6)
-    b.vier[k] = kz
-  end
-  b.jeReiter = text(b, 10); b.jeReiter:SetPoint("TOPLEFT", 0, -236); b.jeReiter:SetWidth(INNEN - 96); b.jeReiter:SetWordWrap(false)
+  -- 2.63 (Wunsch Alex 21.11.): zwei Linien-Diagramme + zwei Tabellen statt Kacheln und Balken
+  b.diaGold = diagramm(b, "Gold"); b.diaGold:SetPoint("TOPLEFT", 0, -30)
+  b.diaVerm = diagramm(b, "Vermögen  " .. H.grau .. "(Gold + Ware)" .. ENDE); b.diaVerm:SetPoint("TOPLEFT", 0, -(30 + 122 + 12))
+  b.tabGold = tabelle(b, { 270, 353, 436 }, 10)
+  b.tabVerm = tabelle(b, { 353, 436 }, 12)
+  b.jeReiter = text(b, 10); b.jeReiter:SetWidth(INNEN - 96); b.jeReiter:SetWordWrap(false)
   -- 2.55 (Befund 46): Top-Verkäufe & Verluste je Item
   b.top = link(b, 10, function()
     local f = GF.bilanzFilter
     if f and f.art == "top" then GF.bilanzFilter = nil else GF.bilanzFilter = { art = "top", titel = "Top-Verkäufe & Verluste" } end
     GF.aktualisieren()
   end, { "Top-Verkäufe & Verluste", "Je Item im gewählten Zeitraum: Menge, Einkauf, Verkauf, Profit absolut und in %, Haltedauer." })
-  b.top:SetPoint("TOPRIGHT", 0, -233); b.top:Text("Top & Verluste")
-  b.herkunft = text(b, 10); b.herkunft:SetPoint("TOPLEFT", 0, -258); b.herkunft:SetWidth(INNEN); b.herkunft:SetWordWrap(true); b.herkunft:SetSpacing(3)
-  b.lern = text(b, 10); b.lern:SetPoint("TOPLEFT", 0, -290); b.lern:SetWidth(INNEN); b.lern:SetWordWrap(true); b.lern:SetSpacing(3)
+  b.top:Text("Top & Verluste")
+  b.lern = text(b, 10); b.lern:SetWidth(INNEN); b.lern:SetWordWrap(true); b.lern:SetSpacing(3)
   b.liste = abschnitt(b, F.gold, 0)
   b.zeilen = {}
   b.alle = link(b.liste, 10, function() GF.bilanzFilter = nil; GF.aktualisieren() end)

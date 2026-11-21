@@ -3617,7 +3617,7 @@ local function snKlick(self, knopf, down)
   -- Eingaben in einem Tastendruck). Ist der Preis beim Loslassen noch nicht da, wie bisher ein 2. Druck.
   -- Orange bestaetigt nie beim Loslassen (bewusster 2. Druck). Schutz: 0,6 Sek. nach einem Kauf und die ersten
   -- 0,25 Sek. eines neuen Treffers zaehlt keine Eingabe (Mausrad/gehaltene Taste kauft nichts Ungesehenes).
-  local los = (down == false)
+  local los = (down == false) and knopf ~= "RightButton" -- 2.66.2: Rechtsklick (kommt als „loslassen“) = überspringen
   -- 2.66.1 (Befund Alex 21.11. 22:14: „muss dennoch 2× drücken“): messen, ob WoW das Loslassen meldet und ob der Preis
   -- beim Loslassen schon da war -> „Warum nicht?“
   if knopf ~= "RightButton" then

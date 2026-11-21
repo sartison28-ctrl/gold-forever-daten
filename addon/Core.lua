@@ -3484,7 +3484,10 @@ local function snLog(t, aus)
   t.geloggt = true
   local d = GoldForeverDB.sniper or {}; GoldForeverDB.sniper = d
   d.log = d.log or {}
-  d.log[#d.log + 1] = { t = t.t, id = t.id, n = t.n, max = t.max, R = t.R, neu = t.neu, gewinn = t.gewinn, abw = t.abw, aus = aus, h = tonumber(date("%H", t.t)), tr = t.treppe }
+  d.log[#d.log + 1] = { t = t.t, id = t.id, n = t.n, max = t.max, R = t.R, neu = t.neu, gewinn = t.gewinn, abw = t.abw, aus = aus, h = tonumber(date("%H", t.t)), tr = t.treppe,
+    -- 2.64.2 (Lernsystem): mehr Merkmale je Treffer, damit spaeter gelernt werden kann, was gut lief
+    wt = tonumber(date("%w", t.t)), kosten = t.kosten, rk = t.risiko, rg = t.risikoGrund, mo = GF.sniper and GF.sniper.modus,
+    u = t.umsatz and math.floor(t.umsatz) or nil, Rv = t.Rv, sek = t.sek, kn = t.knaller and true or nil, ev = t.eigenVK, ez = t.einzel and true or nil }
   while #d.log > 3000 do table.remove(d.log, 1) end -- 2.64.1: laenger aufheben (Lernen, Auswertung)
 end
 GF.sniperLog = snLog

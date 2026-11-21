@@ -3771,6 +3771,10 @@ end
 -- halber Menge stehen („NOCHMAL“) – der naechste Druck/Mausrad-Dreh startet sofort den kleineren Kauf (keine neue Suche).
 -- Halbiert wird, solange der anteilige Gewinn die Mindestregeln erfuellt (>= 3s und >= 10 % vom Einsatz).
 function GF.sniperHalbieren(t)
+  -- 2.73.1 (Daten 21.11. 23:20–23:39 + Befund Alex 23:59 „hält nur auf“): die Rest-Suche nach „zu spät“ trifft 40 %
+  -- (14 von 35) und brachte den Großteil des Gewinns; Halbieren kostet je Schritt eine Server-Runde ohne neue Preise.
+  -- Darum standardmaessig aus (wieder Rest-Suche); einschaltbar mit /gf sniper halbieren
+  if not snDB().halbieren then return nil end
   if not t or t.einzel or (t.n or 0) < 2 then return nil end
   local n2 = math.floor(t.n / 2)
   local g2 = math.floor((t.gewinn or 0) * n2 / t.n)
@@ -4339,6 +4343,9 @@ function GF.sniperBefehl(rest)
     if cmd == "" then GF.sniperUmschalten() else GF.sniperUmschalten(cmd == "an") end
   elseif cmd == "add" and id then db.eigen[id] = true; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " in der Merkliste.")
   elseif cmd == "del" and id then db.eigen[id] = nil; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " entfernt.")
+  elseif cmd == "halbieren" then
+    db.halbieren = not db.halbieren
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Halbieren nach „zu spät“ " .. (db.halbieren and "an" or "aus – stattdessen sofort neue Suche nach dem Rest (Standard)") .. ".")
   elseif cmd == "fokus" then
     db.fokus = db.fokus or {}
     local fid = wert and (tonumber(wert:match("item:(%d+)")) or tonumber(wert))

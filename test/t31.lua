@@ -2,6 +2,7 @@ dofile("/home/claude/test/t28.lua")
 local GF = GoldForever
 local S = GF.sniper
 local B = GoldForeverSniperKnopf
+GoldForeverDB.sniper.halbieren = true
 KAEUFE = {}
 C_AuctionHouse.StartCommoditiesPurchase = function(id, n) KAEUFE[#KAEUFE + 1] = "start" .. n end
 C_AuctionHouse.ConfirmCommoditiesPurchase = function(id, n) KAEUFE[#KAEUFE + 1] = "ok" .. n end

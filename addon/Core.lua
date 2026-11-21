@@ -1480,6 +1480,7 @@ local function bankFensterSuchen()
 end
 GF.bankOffen = false
 function GF.punkteAktualisieren()
+  if GF.baganatorNeu then pcall(GF.baganatorNeu) end
   if EUI_Bags and EUI_Bags.IsVisible and EUI_Bags:IsVisible() then alleKnoepfe(EUI_Bags, 0) end
   if EUI_BagsReagent and EUI_BagsReagent.IsVisible and EUI_BagsReagent:IsVisible() then alleKnoepfe(EUI_BagsReagent, 0) end
   if GF.bankOffen then
@@ -1488,7 +1489,34 @@ function GF.punkteAktualisieren()
     end
   end
 end
+-- 2.60 (Wunsch Alex 21.11.): GF-Markierung in Baganator ueber die offizielle Ecken-Symbol-Schnittstelle
+-- (Baganator.API.RegisterCornerWidget, wie NaowhForever/Mailworthy auf Forever). Ecke in Baganators Icon-Einstellungen waehlbar.
+local bagGF = { an = false, letzt = 0 }
+function GF.baganatorAnmelden()
+  if bagGF.an or not (Baganator and Baganator.API and Baganator.API.RegisterCornerWidget) then return end
+  local ok = pcall(Baganator.API.RegisterCornerWidget, "Gold Forever", "gold_forever",
+    function(t, details)
+      local id = details and details.itemID
+      if not id or GoldForeverDB.punkte == false then return false end
+      local ok2, farbe = pcall(punktFuer, id, details.isBound)
+      if ok2 and farbe then t:SetVertexColor(farbe[1], farbe[2], farbe[3], 1); return true end
+      return false
+    end,
+    function(btn)
+      local t = btn:CreateTexture(nil, "OVERLAY")
+      t:SetTexture("Interface\\Buttons\\WHITE8X8"); t:SetSize(9, 9)
+      return t
+    end,
+    { corner = "top_left", priority = 1 })
+  bagGF.an = ok
+end
+function GF.baganatorNeu()
+  if not (bagGF.an and Baganator.API.RequestItemButtonsRefresh) then return end
+  if time() - bagGF.letzt < 2 then return end
+  bagGF.letzt = time(); pcall(Baganator.API.RequestItemButtonsRefresh)
+end
 local function taschenHaken()
+  pcall(GF.baganatorAnmelden)
   if EUI_Bags and EUI_Bags.RefreshInventory and not GF.taschenGehakt then
     hooksecurefunc(EUI_Bags, "RefreshInventory", function() pcall(GF.punkteAktualisieren) end)
     if EUI_BagsReagent and EUI_BagsReagent.RefreshInventory then hooksecurefunc(EUI_BagsReagent, "RefreshInventory", function() pcall(GF.punkteAktualisieren) end) end
@@ -1507,7 +1535,7 @@ local function ahAuf()
 end
 local function ahZu()
   GF.ah = nil; GF.kaufLauf = nil
-  if GF.sniper then GF.sniper.treffer = nil; GF.sniper.suche = nil; if GF.sniperZeigen then pcall(GF.sniperZeigen) end end
+  if GF.sniper then GF.sniper.treffer = nil; GF.sniper.suche = nil; GF.sniper.browseLaeuft = false; GF.sniper.queue = {}; if GF.sniperZeigen then pcall(GF.sniperZeigen) end end
   if GoldForever_AH then GoldForever_AH(false) end
 end
 -- Seit dem Oeffnen des AH gekauft: aus den gebuchten Kaeufen (Commodities landen im Briefkasten,
@@ -2931,6 +2959,47 @@ function GF.zieleCheck()
     end
   end
   for id in pairs(gem) do if not offen[id] then gem[id] = nil end end
+  pcall(GF.weckerCheck)
+end
+-- 2.60 Bank-Charakter-Wecker: Ware, die bei einem anderen eigenen Charakter liegt (Umzug), pruefen.
+-- Ziel erreicht bzw. Tageshoch mit Gewinn -> Meldung "Ser Swarley: N Items koennen verkauft werden – umloggen".
+-- Unterwegs gibt es keine Live-Preise: Grundlage sind TSM-/Realm-Daten vom letzten /reload + Tagesrhythmus.
+function GF.weckerCheck()
+  local ich = charKey()
+  local proChar = {}
+  local hoch = GF.imTageshoch and GF.imTageshoch()
+  for _, p in ipairs(GF.fremdePos or {}) do
+    if p.char and p.char ~= ich and p.char ~= "?" and p.n > 0 then
+      local i = p.i or GF.info(p.id)
+      local R = i and GF.referenz(p.id, i)
+      local Rv = R and GF.verkaufsRef(p.id, R)
+      local imAH = ((GoldForeverDB.imAHc or {})[p.char] or {}).items
+      local liegt = p.n - math.min(p.n, (imAH and imAH[p.id] and imAH[p.id].n) or 0)
+      local ziel = (p.zielN or 0) > 0 and (p.zielSumme / p.zielN) or math.ceil(p.ek * 1.05 / 0.95)
+      local markt = i and i.p and math.min(i.p - 1, Rv or i.p) or Rv
+      if liegt > 0 and markt and (markt >= ziel or (hoch and markt * 0.95 > p.ek * 1.05)) then
+        local c = proChar[p.char] or { n = 0, items = 0, gewinn = 0, ids = {} }
+        c.items = c.items + 1; c.n = c.n + liegt; c.gewinn = c.gewinn + math.floor((markt * 0.95 - p.ek) * liegt)
+        c.ids[#c.ids + 1] = p.id
+        proChar[p.char] = c
+      end
+    end
+  end
+  GoldForeverDB.wecker = GoldForeverDB.wecker or {}
+  for char, c in pairs(proChar) do
+    table.sort(c.ids)
+    local sig = table.concat(c.ids, ",")
+    local w = GoldForeverDB.wecker[char]
+    if not w or w.sig ~= sig or time() - w.t > 7200 then
+      GoldForeverDB.wecker[char] = { sig = sig, t = time() }
+      print(GOLD .. "Gold Forever:" .. ENDE .. " " .. HAKEN .. " " .. GRUEN .. char .. ": " .. c.items .. " Item" .. (c.items == 1 and "" or "s") .. " (" .. c.n .. " Stück) können jetzt verkauft werden" .. ENDE ..
+        GRAU .. " · Gewinn ca. " .. ENDE .. GRUEN .. "+" .. GF.geld(c.gewinn) .. ENDE .. GRAU .. " – umloggen. (Preise vom letzten /reload)" .. ENDE)
+      if RaidNotice_AddMessage and RaidWarningFrame then
+        pcall(RaidNotice_AddMessage, RaidWarningFrame, "Gold Forever: " .. char .. " – " .. c.items .. " Items verkaufen (+" .. math.floor(c.gewinn / 10000) .. "g)", { r = 0.29, g = 0.87, b = 0.5 })
+      end
+      if PlaySound then pcall(PlaySound, 8960) end
+    end
+  end
 end
 
 -- ---------------------------------------------------------------- Haendlerware merken
@@ -3300,7 +3369,15 @@ function GF.sniperErgebnis(id)
   GF.sniperZeigen()
   return true
 end
-function GF.sniperBereit() snBauen(); GF.sniperListe(); GF.sniperZeigen() end
+function GF.sniperBereit()
+  snBauen(); GF.sniperListe()
+  -- 2.60 (Befund 57): AH zu und wieder auf bei eingeschaltetem Sniper -> Suche lief nicht wieder an ("haengt").
+  -- Zustand zuruecksetzen und die Suche neu starten.
+  local S = GF.sniper
+  S.browseLaeuft = false; S.suche = nil; S.aktuell = nil; S.treffer = nil; S.queue = {}
+  if S.an and not S.laeuft then S.laeuft = true; snTick() end
+  GF.sniperZeigen()
+end
 function GF.sniperUmschalten(an)
   local S = GF.sniper
   snBauen()
@@ -3442,6 +3519,7 @@ if hooksecurefunc then pcall(hooksecurefunc, "SendMail", function(empf) pcall(se
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+pcall(f.RegisterEvent, f, "ADDON_LOADED")
 pcall(f.RegisterEvent, f, "MAIL_SEND_SUCCESS")
 pcall(f.RegisterEvent, f, "MAIL_FAILED")
 f:RegisterEvent("CHAT_MSG_LOOT")
@@ -3525,8 +3603,10 @@ f:SetScript("OnEvent", function(_, ev, ...)
   if ev == "PLAYERBANKSLOTS_CHANGED" or ev == "PLAYERREAGENTBANKSLOTS_CHANGED" then pcall(GF.bankMerken); pcall(GF.punkteAktualisieren); return end
   if ev == "MAIL_SEND_SUCCESS" then pcall(GF.umzugFertig, true); return end
   if ev == "MAIL_FAILED" then pcall(GF.umzugFertig, false); return end
+  if ev == "ADDON_LOADED" and (...) == "Baganator" then pcall(GF.baganatorAnmelden); return end
   if ev == "PLAYER_LOGIN" then
-    GF.eigeneChars()[charKey()] = true -- 2.59: eigene Charaktere fuer den Umzug merken
+    GF.eigeneChars()[charKey()] = true
+    pcall(GF.baganatorAnmelden) -- 2.59: eigene Charaktere fuer den Umzug merken
     hookTooltips(); tagPruefen(); pcall(taschenHaken); pcall(kaufHaken); B(); pcall(GF.geldBuchen)
     if C_Timer then
       C_Timer.After(8, function() pcall(GF.zieleCheck) end)

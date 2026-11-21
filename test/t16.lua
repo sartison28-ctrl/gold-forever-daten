@@ -42,3 +42,23 @@ GF.live[2453] = { t = JETZT, p = 50, st = { { p = 50, q = 2 }, { p = 70, q = 5 }
 GF.liveAbziehen(2453, 3)
 zeige("Live nach Kauf: p=" .. GF.live[2453].p .. " q=" .. GF.live[2453].st[1].q)
 assert(GF.live[2453].p == 70 and GF.live[2453].st[1].q == 4)
+-- 2.61.2 Sniper-Diagnose
+GF.sniper.an = true; GF.sniper.suche = 765
+GF.live[765] = { t = JETZT, p = 1490, st = { { p = 1490, q = 5 } } }
+GF.sniperErgebnis(765)
+GF.live[4444] = nil
+GF.sniper.suche = 4444; GF.sniperErgebnis(4444)
+LOG = {}
+GF.sniperWarum()
+for _, l in ipairs(LOG) do zeige("W: " .. l:gsub("|c%x+", ""):gsub("|r", ""):gsub("|T.-|t", "¤")) end
+-- Wochenende + fallend
+local fallV = {}; for k = 0, 30 do fallV[#fallV + 1] = { t = JETZT - (30 - k) * 3600, p = 1400 - k * 15 } end
+GoldForeverDB.posVerlauf[5006] = fallV
+local wd = tonumber(date("%w"))
+zeige("Wochentag " .. wd .. ": " .. GF.haltenWann({ id = 5006, ziel = 1350, seit = JETZT }, GF.kursVerlauf(5006)))
+local alt = JETZT
+JETZT = os.time({ year = 2026, month = 11, day = 21, hour = 12 })
+local fv = {}; for k = 0, 30 do fv[#fv + 1] = { t = JETZT - (30 - k) * 3600, p = 1400 - k * 15 } end
+GoldForeverDB.posVerlauf[5006] = fv
+zeige("Samstag: " .. GF.haltenWann({ id = 5006, ziel = 1350, seit = JETZT }, GF.kursVerlauf(5006)))
+JETZT = alt

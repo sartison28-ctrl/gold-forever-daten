@@ -398,11 +398,18 @@ function GF.haltenWann(p, kurs)
   if abstand <= 0.03 then return "einstellen ca. " .. fenster, "Der Preis ist fast am Ziel – im nächsten Tageshoch einstellen." end
   local hochFarbe = pz >= 30 and H.orange or ""
   local zTxt = hochFarbe .. "+" .. pz .. " %" .. (hochFarbe ~= "" and ENDE .. H.grau or "")
-  -- schon gesehen: hoechster gemessener Preis der letzten Tage erreicht das Ziel
-  if kurs and kurs.hoch and kurs.hoch >= p.ziel * 0.97 then
-    return "ca. " .. fenster .. " (Tageshoch)", "Den Zielpreis gab es in den letzten Tagen schon – er kommt meist im Tageshoch wieder. " .. spaet
-  end
   local proTag = GF.kursTrend(p.id, kurs)
+  -- schon gesehen: hoechster gemessener Preis der letzten Tage erreicht das Ziel – aber nur, wenn der Preis nicht
+  -- gerade einbricht (2.61.2, Makelloses Leder: −44 %/Tag und trotzdem „heute“)
+  if kurs and kurs.hoch and kurs.hoch >= p.ziel * 0.97 and not (proTag and proTag <= -10) then
+    return "ca. " .. fenster, "Den Zielpreis gab es in den letzten Tagen schon – er kommt meist im Tageshoch wieder. " .. spaet
+  end
+  -- 2.61.2 (These Alex 21.11.): am Wochenende fallen viele Preise (mehr Angebote, Preis-Resets) und erholen sich
+  -- unter der Woche -> faellt es am Sa/So, ist Mo/Di die naechste realistische Chance
+  local wt = tonumber(date("%w"))
+  if (wt == 6 or wt == 0) and proTag and proTag <= -1 then
+    return zTxt .. " · Wochenendtief · ca. Mo/Di", "Am Wochenende kommen mehr Angebote ins AH – viele Preise fallen und erholen sich unter der Woche. Nicht im Tief verkaufen. " .. spaet
+  end
   if proTag and proTag >= 1 then
     local tage = math.ceil(pz / proTag)
     if tage <= 7 then return zTxt .. " · ca. " .. (tage <= 1 and "morgen" or ("in " .. tage .. " Tagen")), "Geschätzt aus dem Preisanstieg der letzten Tage. " .. spaet end

@@ -2321,7 +2321,7 @@ function GF.kaufStarten(id, menge, maxPreis)
 end
 function GF.kaufPreisDa(unit, total)
   local k = GF.kaufLauf; if not k then return end
-  k.unit, k.total = unit, total
+  k.unit, k.total, k.preisT = unit, total, time()
   if k.max and unit and unit > k.max then
     pcall(C_AuctionHouse.CancelCommoditiesPurchase)
     GF.kaufLauf = nil
@@ -3523,10 +3523,8 @@ function GF.sniperZeigen()
     snF.name:SetText(name); snF.name:Show()
     local RF = ({ sicher = GRUEN .. "SICHER  ", ok = BLAU .. "OK  ", risiko = ORANGE .. "RISIKO  " })[t.risiko or "ok"] .. ENDE
     local gtxt = GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE
-    if k and k.id == t.id and k.unit and (t.risiko == "sicher" or t.scharf) then
-      snF.knopf.t:SetText(RF .. (t.scharf and (GOLD .. "JETZT BESTÄTIGEN  " .. ENDE) or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "   " .. gtxt .. "   [" .. snDB().taste .. "]")
-    elseif k and k.id == t.id and k.unit then
-      snF.knopf.t:SetText(RF .. "KAUFEN (2× drücken)  " .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "   " .. gtxt .. "   [" .. snDB().taste .. "]")
+    if k and k.id == t.id and k.unit then
+      snF.knopf.t:SetText(RF .. GOLD .. "BESTÄTIGEN  " .. ENDE .. t.n .. "× = " .. GF.geld(k.total or k.unit * t.n) .. "   " .. gtxt .. "   [" .. snDB().taste .. "]")
     elseif k and k.id == t.id then
       snF.knopf.t:SetText(RF .. "Preis wird geholt …  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. gtxt)
     else
@@ -3592,9 +3590,9 @@ local function snKlick(self, knopf)
     GF.sniperZeigen(); return
   end
   local k = GF.kaufLauf
-  -- 2.64 (Wunsch Alex): grün = ein Tastendruck (Kauf ist vorbereitet); blau/orange = zwei Tastendrücke
-  if k and k.id == t.id and k.unit and t.risiko ~= "sicher" and not t.scharf then
-    t.scharf = true; GF.sniperZeigen(); return
+  -- 2.64.3: 1. Druck startet, 2. Druck bestaetigt. Blau/orange: Bestaetigen erst 1 Sek. nach dem Preis (kein Doppeldruck)
+  if k and k.id == t.id and k.unit and t.risiko ~= "sicher" and time() - (k.preisT or 0) < 1 then
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Risiko-Treffer – bitte kurz prüfen und dann bestätigen." .. ENDE); return
   end
   if k and k.id == t.id and k.unit then
     local ok, err, kk = GF.kaufBestaetigen()
@@ -3605,12 +3603,16 @@ local function snKlick(self, knopf)
       S.ausstehend = { t = t, kk = kk, name = name, zeit = time() }
       S.treffer = nil
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
-  elseif k and k.id == t.id then
+  elseif k and k.id == t.id and time() - (k.t or 0) < 3 then
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Preis wird noch geholt – gleich noch einmal.")
+  elseif k and k.id == t.id then
+    -- haengt (keine Antwort) -> abbrechen und mit diesem Tastendruck neu starten
+    pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil
+    local ok, err = GF.kaufStarten(t.id, t.n, t.max)
+    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
   elseif not k then
     GF.unterbieterMerk = GF.unterbieterMerk or {}
     GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
-    if t.risiko ~= "sicher" then t.scharf = true end -- Start per Klick zaehlt als erster Druck
     local ok, err = GF.kaufStarten(t.id, t.n, t.max)
     if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil end
   end
@@ -3844,13 +3846,8 @@ function GF.sniperErgebnis(id)
     S.treffer = t
     if PlaySound then pcall(PlaySound, 8959) end
     if FlashClientIcon then pcall(FlashClientIcon) end
-    -- 2.64: Kauf sofort vorbereiten (Preis holen), damit [Taste] nur noch bestaetigt – Stapelware, keine Einzel-Auktion
-    if not t.einzel and not GF.kaufLauf then
-      GF.unterbieterMerk = GF.unterbieterMerk or {}
-      GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true }
-      local ok = GF.kaufStarten(t.id, t.n, t.max)
-      t.vorbereitet = ok and true or false
-    end
+    -- 2.64.3: Kauf NICHT mehr vorbereiten – WoW startet einen Kauf nur nach Tastendruck (im Spiel getestet 21.11.:
+    -- „Preis wird noch geholt“ hing). Ablauf: 1. Druck startet, 2. Druck bestaetigt.
   end
   GF.sniperZeigen()
   -- 2.64: sofort weiter (nicht auf den naechsten Takt warten)

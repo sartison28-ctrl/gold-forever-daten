@@ -40,7 +40,7 @@ GF.kaufLauf = nil
 local tg = { id = 5631, n = 5, max = 40, neu = 69, gewinn = 100, kosten = 200, R = 60, Rv = 60, abw = 30, t = time(), risiko = "sicher" }
 GF.sniper.treffer = tg; GF.kaufStarten(5631, 5, 40); GF.kaufPreisDa(40, 200)
 GoldForeverSniperKnopf._scripts.OnClick(GoldForeverSniperKnopf, "LeftButton")
-zeige("Grün 1 Druck: " .. tostring(KAEUFE[#KAEUFE] and KAEUFE[#KAEUFE][1]))
+zeige("Grün nach Preis 1 Druck bestätigt: " .. tostring(KAEUFE[#KAEUFE] and KAEUFE[#KAEUFE][1]))
 GF.sniper.modus = "sicher"; GF.sniper.treffer = nil; GF.kaufLauf = nil
 GF.live[5631] = { t = JETZT, p = 40, st = { { p = 40, q = 50 }, { p = 70, q = 50 } } }
 GoldForeverDB.einzelItem[5631] = nil; GF.sniper.hits = {}

@@ -28,8 +28,7 @@ GoldForeverSniperKnopf._scripts.OnClick(GoldForeverSniperKnopf, "LeftButton")
 zeige("nach Klick 1: " .. tostring(KAEUFE[#KAEUFE] and KAEUFE[#KAEUFE][1]) .. " | " .. tostring(GoldForeverSniperKnopf.t:GetText()))
 fire("COMMODITY_PRICE_UPDATED", 600, 12000)
 zeige("Preis da: " .. tostring(GoldForeverSniperKnopf.t:GetText()))
-GoldForeverSniperKnopf._scripts.OnClick(GoldForeverSniperKnopf, "LeftButton") -- 2.64: orange = 2 Tastendrücke
-zeige("scharf: " .. tostring(GoldForeverSniperKnopf.t:GetText()))
+JETZT = JETZT + 2 -- 2.64.3: Risiko-Treffer erst 1 Sek. nach dem Preis bestätigen
 GoldForeverSniperKnopf._scripts.OnClick(GoldForeverSniperKnopf, "LeftButton")
 zeige("nach Klick 2: " .. tostring(KAEUFE[#KAEUFE] and KAEUFE[#KAEUFE][1]) .. " Treffer weg " .. tostring(GF.sniper.treffer == nil))
 -- zu teuer: Preis höher als max -> Abbruch

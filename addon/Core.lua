@@ -2324,6 +2324,19 @@ function GF.kaufPreisDa(unit, total)
   k.unit, k.total, k.preisT = unit, total, time()
   k.preisGT = (GetTime and GetTime()) or time()
   if k.gt0 and GF.sniperDiag then local D2 = GF.sniperDiag(); D2.tasten = D2.tasten or { runter = 0, los = 0, losOhnePreis = 0, ohneArt = 0 }; D2.tasten.preisMs = math.floor((k.preisGT - k.gt0) * 1000) end
+  -- 2.70 (Wunsch Alex 21.11. 23:06): „teurer“ annehmen, wenn es sich noch lohnt – neuer Stueckpreis hoechstens halb so
+  -- weit vom Netto-Verkaufspreis entfernt wie geplant und Mindestregeln erfuellt (>= 3s und >= 10 % vom Einsatz)
+  local st = GF.sniper and GF.sniper.treffer
+  if k.max and unit and unit > k.max and st and st.id == k.id and st.neu and not st.einzel then
+    local netto = st.neu * 0.95
+    local g2 = math.floor((netto - unit) * (k.n or st.n))
+    if unit <= k.max + 0.5 * (netto - k.max) and g2 >= 300 and g2 >= unit * (k.n or st.n) * 0.10 then
+      st.gewinnPlan = st.gewinnPlan or st.gewinn
+      st.gewinn, st.kosten, st.zs, st.zp = g2, unit * (k.n or st.n), "teurer-ok", unit
+      k.max = unit
+      local D2 = GF.sniperDiag and GF.sniperDiag(); if D2 then D2.teurerOk = (D2.teurerOk or 0) + 1 end
+    end
+  end
   if k.max and unit and unit > k.max then
     pcall(C_AuctionHouse.CancelCommoditiesPurchase)
     GF.kaufLauf = nil
@@ -3637,7 +3650,9 @@ local function snKlick(self, knopf, down)
     if los and k1 and k1.gt0 then T2.ms = math.floor((gt() - k1.gt0) * 1000) end
   end
   if S.sperreBis and gt() < S.sperreBis then return end
-  if knopf ~= "RightButton" and not los and not GF.kaufLauf and t.zeigGT and gt() - t.zeigGT < 0.25 then return end
+  -- 2.70 (Analyse 21.11. 23:02: Reaktion fast immer genau 0,3 Sek. = diese Sperre): im Fokus-Modus 0,1 Sek.
+  local fokusM = S.modus == "fokus"
+  if knopf ~= "RightButton" and not los and not GF.kaufLauf and t.zeigGT and gt() - t.zeigGT < (fokusM and 0.1 or 0.25) then return end
   if los then
     local k0 = GF.kaufLauf
     if not (k0 and k0.id == t.id and k0.unit and t.risiko ~= "risiko" and not t.einzel) then return end
@@ -3690,7 +3705,7 @@ local function snKlick(self, knopf, down)
       -- 2.62.2 (Befund 64): erst als „gekauft“ zaehlen, wenn WoW den Kauf bestaetigt (COMMODITY_PURCHASE_SUCCEEDED);
       -- schlaegt er fehl (schon weg), zaehlt er als „zu spät“
       S.ausstehend = { t = t, kk = kk, name = name, zeit = time() }
-      S.treffer = nil; S.sperreBis = gt() + 0.6
+      S.treffer = nil; S.sperreBis = gt() + (S.modus == "fokus" and 0.3 or 0.6)
     else print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kauf ging nicht – " .. tostring(err) .. ENDE) end
   elseif k and k.id == t.id and time() - (k.t or 0) < 3 then
     if gt() - (S.holtMeldung or 0) > 2 then S.holtMeldung = gt(); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Preis wird noch geholt – gleich noch einmal.") end
@@ -3899,6 +3914,7 @@ end
 local function snSuche(id)
   local S = GF.sniper
   S.aktuell, S.suche, S.sucheT = id, id, time()
+  S.sucheGT = (GetTime and GetTime()) or time()
   S.sucheFokus = S.fokusNaechste == id; S.fokusNaechste = nil
   S.geprueft = S.geprueft or {}; S.geprueft[id] = time()
   pcall(function()
@@ -4015,18 +4031,27 @@ local function snSchritt()
   local S = GF.sniper
   if not (S.an and GF.ah) then return end
   if S.treffer or snPause() then GF.sniperZeigen(); return end
-  if S.suche and time() - (S.sucheT or 0) < 2 then return end -- 2.65: 3 -> 2 Sek. (Antwort kommt sonst < 1 Sek.)
+  -- 2.70: im Fokus-Modus nur 0,6 Sek. auf eine Antwort warten (genau gemessen), sonst 2 Sek.
+  local fokusM = S.modus == "fokus"
+  local gNow = (GetTime and GetTime()) or time()
+  if S.suche and (fokusM and (gNow - (S.sucheGT or 0) < 0.6) or (not fokusM and time() - (S.sucheT or 0) < 2)) then return end
+  if S.suche and fokusM then local D2 = GF.sniperDiag(); D2.fokusOhneAntwort = (D2.fokusOhneAntwort or 0) + 1 end
   if S.suche then local D2 = GF.sniperDiag(); D2.g["Suche ohne Antwort"] = (D2.g["Suche ohne Antwort"] or 0) + 1 end
   S.suche = nil
   -- AH-Sperre von Blizzard beachten (sonst gehen Anfragen verloren)
-  if C_AuctionHouse.IsThrottledMessageSystemReady and not C_AuctionHouse.IsThrottledMessageSystemReady() then return end
+  if C_AuctionHouse.IsThrottledMessageSystemReady and not C_AuctionHouse.IsThrottledMessageSystemReady() then
+    -- 2.70: nicht bis zum naechsten Takt (0,8 Sek.) warten – kurz neu versuchen (+ Ereignis AUCTION_HOUSE_THROTTLED_SYSTEM_READY)
+    local D2 = GF.sniperDiag(); D2.gebremst = (D2.gebremst or 0) + 1
+    if C_Timer and not S.bremseGeplant then S.bremseGeplant = true; C_Timer.After(0.1, function() S.bremseGeplant = nil; GF.sniperSchritt() end) end
+    return
+  end
   local browse = C_AuctionHouse and C_AuctionHouse.SendBrowseQuery
   -- 2.68 Fokus-Modus: NUR Fokus-Items, naechste Suche sobald die letzte beantwortet ist (min. 0,15 Sek. Abstand)
   if S.modus == "fokus" then
     local fk = GF.sniperFokus()
     if #fk == 0 then GF.sniperZeigen(); return end
     local jetztG = (GetTime and GetTime()) or time()
-    local warte = 0.15 - (jetztG - (S.fokusT or 0))
+    local warte = 0.1 - (jetztG - (S.fokusT or 0)) -- 2.70: 0,15 -> 0,1 Sek.
     if warte > 0 then
       if C_Timer and not S.fokusGeplant then S.fokusGeplant = true; C_Timer.After(warte, function() S.fokusGeplant = nil; GF.sniperSchritt() end) end
       return
@@ -4102,6 +4127,11 @@ function GF.sniperErgebnis(id)
   S.suche = nil; S.aktuell = nil
   S.letzterGrund = nil
   S.fokusJetzt = S.sucheFokus; S.sucheFokus = nil
+  -- 2.70: Antwortzeit der Fokus-Suchen messen (fuer „Warum nicht?“)
+  if S.fokusJetzt and S.sucheGT then
+    local D2 = GF.sniperDiag(); local ms = math.floor((((GetTime and GetTime()) or time()) - S.sucheGT) * 1000)
+    D2.fokusMsN = (D2.fokusMsN or 0) + 1; D2.fokusMsSumme = (D2.fokusMsSumme or 0) + ms
+  end
   local t = GF.sniperBewerten(id)
   if t and S.fokusJetzt then t.fokus = true; local D2 = GF.sniperDiag(); D2.fokusTreffer = (D2.fokusTreffer or 0) + 1 end
   S.fokusJetzt = nil
@@ -4185,7 +4215,9 @@ function GF.sniperWarum()
   if dd or bt then print(GRAU .. "  Tempo: Ø Durchgang " .. (dd and (dd .. " Sek.") or "—") .. " · Ø vom Fund bis zum Treffer " .. (bt and (bt .. " Sek.") or "—") .. ENDE) end
   if not snDB().fokusAus then
     local t = {}; for _, x in ipairs(GF.sniperFokus()) do t[#t + 1] = nm(x) end
-    print(GRAU .. "  Fokus (je ~2 Sek.): " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) .. ENDE)
+    print(GRAU .. "  Fokus: " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) ..
+      ((D2.fokusMsN or 0) > 0 and (" · Ø Antwort " .. math.floor(D2.fokusMsSumme / D2.fokusMsN) .. " ms") or "") .. " · ohne Antwort " .. (D2.fokusOhneAntwort or 0) ..
+      " · gebremst " .. (D2.gebremst or 0) .. " · „teurer“ angenommen " .. (D2.teurerOk or 0) .. ENDE)
   end
   local T2 = D2.tasten
   if T2 then print(GRAU .. "  Tasten: drücken " .. T2.runter .. " · loslassen " .. T2.los .. " (davon Preis noch nicht da " .. T2.losOhnePreis .. ") · ohne Angabe " .. T2.ohneArt ..
@@ -4375,6 +4407,7 @@ f:RegisterEvent("MAIL_INBOX_UPDATE")
 pcall(f.RegisterEvent, f, "COMMODITY_PRICE_UPDATED")
 pcall(f.RegisterEvent, f, "OWNED_AUCTIONS_UPDATED")
 f:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
+pcall(f.RegisterEvent, f, "AUCTION_HOUSE_THROTTLED_SYSTEM_READY") -- 2.70: Sniper sofort weiter, wenn Blizzard wieder Anfragen annimmt
 pcall(f.RegisterEvent, f, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 pcall(f.RegisterEvent, f, "AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 f:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
@@ -4414,6 +4447,7 @@ f:SetScript("OnEvent", function(_, ev, ...)
   if ev == "COMMODITY_PRICE_UPDATED" then pcall(GF.kaufPreisDa, ...); return end
   if ev == "OWNED_AUCTIONS_UPDATED" then pcall(eigeneAuktionen); return end
   if ev == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" or ev == "AUCTION_HOUSE_BROWSE_RESULTS_ADDED" then pcall(GF.sniperBrowse); return end
+  if ev == "AUCTION_HOUSE_THROTTLED_SYSTEM_READY" then if GF.sniper and GF.sniper.an and GF.sniperSchritt then GF.sniperSchritt() end; return end
   if ev == "COMMODITY_SEARCH_RESULTS_UPDATED" then
     -- 2.57: Sniper-Suchen nur auswerten (kein Neuzeichnen des ganzen Fensters alle 1,6 Sek.)
     local sid = ...

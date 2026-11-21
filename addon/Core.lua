@@ -3327,6 +3327,34 @@ local function snNein(id, grund, x)
   while #f > 60 do table.remove(f, 1) end
   return nil
 end
+-- 2.64.1 (Wunsch Alex 21.11. 17:40: Sniper-Live-Daten fuer spaetere Kaufen-Vorschlaege nutzen):
+-- Preis-Ausschlaege aus der Sniper-Durchsuche mitschreiben – die stuendlichen Realm-Daten sehen kurze Spitzen nicht.
+-- GoldForeverDB.markt = { offen = {[id] = Ereignis}, log = { {id, art = "tief"|"hoch", von, bis, p (Extrem), R, q} } } (max. 5000)
+--   tief = guenstigstes Angebot <= 85 % des echten Verkaufspreises; hoch = >= 150 % von „üblich“ (Aufkauf/Reset)
+function GF.marktEreignis(id, p, q)
+  local i = GF.info(id); if not i then return end
+  local R = GF.referenz(id, i); if not R or R <= 0 then return end
+  local Rv = GF.verkaufsRef(id, R) or R
+  local art = (p <= Rv * 0.85 and "tief") or (p >= R * 1.5 and "hoch") or nil
+  local M = GoldForeverDB.markt or { offen = {}, log = {} }; GoldForeverDB.markt = M
+  M.offen = M.offen or {}; M.log = M.log or {}
+  local o = M.offen[id]
+  local jetzt = time()
+  if o and (o.art ~= art or jetzt - o.bis > 1800) then
+    -- Ereignis beendet (Preis wieder normal, andere Richtung oder 30 Min. nicht mehr gesehen)
+    M.log[#M.log + 1] = o; M.offen[id] = nil; o = nil
+    while #M.log > 5000 do table.remove(M.log, 1) end
+  end
+  if art then
+    if o then
+      o.bis = jetzt
+      if (art == "tief" and p < o.p) or (art == "hoch" and p > o.p) then o.p = p end
+      if q and q > (o.q or 0) then o.q = q end
+    else
+      M.offen[id] = { id = id, art = art, von = jetzt, bis = jetzt, p = p, R = math.floor(Rv), q = q }
+    end
+  end
+end
 -- 2.64 (Befund Schildkroetenschuppe): eigener echter Verkaufspreis der letzten 7 Tage (Durchschnitt je Stueck vor Gebuehr)
 function GF.eigenerVK(id)
   local ab = time() - 7 * 86400
@@ -3457,7 +3485,7 @@ local function snLog(t, aus)
   local d = GoldForeverDB.sniper or {}; GoldForeverDB.sniper = d
   d.log = d.log or {}
   d.log[#d.log + 1] = { t = t.t, id = t.id, n = t.n, max = t.max, R = t.R, neu = t.neu, gewinn = t.gewinn, abw = t.abw, aus = aus, h = tonumber(date("%H", t.t)), tr = t.treppe }
-  while #d.log > 500 do table.remove(d.log, 1) end
+  while #d.log > 3000 do table.remove(d.log, 1) end -- 2.64.1: laenger aufheben (Lernen, Auswertung)
 end
 GF.sniperLog = snLog
 local snF
@@ -3705,6 +3733,7 @@ function GF.sniperBrowse()
     local r = res[k]
     local id = r and r.itemKey and r.itemKey.itemID
     if id then S.gesehen = S.gesehen or {}; S.gesehen[id] = true end
+    if id and ids[id] and r.minPrice then pcall(GF.marktEreignis, id, r.minPrice, r.totalQuantity) end
     if id and ids[id] and r.minPrice and not drin[id] and not (S.geprueft[id] and time() - S.geprueft[id] < 60)
       and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) and not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
       local i = GF.info(id)

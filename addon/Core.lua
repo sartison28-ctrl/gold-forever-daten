@@ -2365,10 +2365,21 @@ function GF.kaufPreisDa(unit, total)
     if GF.sniper and GF.sniper.treffer and GF.sniper.treffer.id == k.id then
       -- 2.65: Preis ist hoeher, weil das billige Angebot schon weg ist = „zu spät“
       -- 2.66: Grund + Server-Preis merken und sofort neu suchen – ist noch ein guenstiger Rest da, kommt er als Rest-Treffer
-      GF.sniper.treffer.zs, GF.sniper.treffer.zp = "teurer", unit
-      if GF.sniperLog then GF.sniperLog(GF.sniper.treffer, "zu spät") end
-      if GF.sniperNochmal then GF.sniperNochmal(k.id) end
+      local alt = GF.sniper.treffer
+      alt.zs, alt.zp = "teurer", unit
+      if GF.sniperLog then GF.sniperLog(alt, "zu spät") end
       local D2 = GF.sniperDiag and GF.sniperDiag(); if D2 then D2.g["zu spät – schon weg"] = (D2.g["zu spät – schon weg"] or 0) + 1 end
+      -- 2.73: halbe Menge sofort wieder anbieten, sonst Rest-Suche wie bisher
+      local h = GF.sniperHalbieren and GF.sniperHalbieren(alt)
+      if h then
+        GF.sniper.treffer = h
+        local D3 = GF.sniperDiag(); D3.halbiert = (D3.halbiert or 0) + 1
+        print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " teurer geworden – jetzt " .. h.n .. "× versuchen (nochmal drücken).")
+        if GF.aktualisieren then pcall(GF.aktualisieren) end
+        if GF.sniperZeigen then pcall(GF.sniperZeigen) end
+        return
+      end
+      if GF.sniperNochmal then GF.sniperNochmal(k.id) end
       GF.sniper.zuspaet = { name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(k.id)) or ("Item " .. k.id), t = time() }
       GF.sniper.treffer = nil
     end
@@ -3575,7 +3586,7 @@ local function snLog(t, aus)
     wt = tonumber(date("%w", t.t)), kosten = t.kosten, rk = t.risiko, rg = t.risikoGrund, mo = GF.sniper and GF.sniper.modus,
     u = t.umsatz and math.floor(t.umsatz) or nil, Rv = t.Rv, sek = t.sek, kn = t.knaller and true or nil, ev = t.eigenVK, ez = t.einzel and true or nil,
     -- 2.66: warum zu spaet (teurer = Teil weg / weg = ganz weg) + Server-Stueckpreis; Rest-Treffer; Reaktionszeit (Anzeige -> 1. Druck)
-    zs = t.zs, zp = t.zp, rest = t.rest, rz = t.rz, fk = t.fokus }
+    zs = t.zs, zp = t.zp, rest = t.rest, rz = t.rz, fk = t.fokus, halb = t.halb, por = t.portion, nV = t.nVoll }
   while #d.log > 3000 do table.remove(d.log, 1) end -- 2.64.1: laenger aufheben (Lernen, Auswertung)
 end
 GF.sniperLog = snLog
@@ -3623,7 +3634,7 @@ function GF.sniperZeigen()
     elseif k and k.id == t.id then
       snF.knopf.t:SetText(RF .. "Preis wird geholt …  " .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. gtxt)
     else
-      snF.knopf.t:SetText(RF .. (t.rest and (GOLD .. "REST  " .. ENDE) or "") .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE .. "   [" .. snDB().taste .. "]")
+      snF.knopf.t:SetText(RF .. (t.halb and (GOLD .. "NOCHMAL  " .. ENDE) or "") .. (t.portion and (GOLD .. "TEIL 1  " .. ENDE) or "") .. (t.rest and (GOLD .. "REST  " .. ENDE) or "") .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE .. "   [" .. snDB().taste .. "]")
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
     snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
@@ -3756,6 +3767,23 @@ local function snKlick(self, knopf, down)
   end
   GF.sniperZeigen()
 end
+-- 2.73 (Wunsch Alex 21.11. 23:41: „besser einen Teil als gar nichts“): bei „teurer“/„weg“ bleibt der Treffer mit
+-- halber Menge stehen („NOCHMAL“) – der naechste Druck/Mausrad-Dreh startet sofort den kleineren Kauf (keine neue Suche).
+-- Halbiert wird, solange der anteilige Gewinn die Mindestregeln erfuellt (>= 3s und >= 10 % vom Einsatz).
+function GF.sniperHalbieren(t)
+  if not t or t.einzel or (t.n or 0) < 2 then return nil end
+  local n2 = math.floor(t.n / 2)
+  local g2 = math.floor((t.gewinn or 0) * n2 / t.n)
+  local k2 = math.floor((t.kosten or 0) * n2 / t.n)
+  if g2 < 300 or g2 < k2 * 0.10 then return nil end
+  local neu = {}
+  for k, v in pairs(t) do neu[k] = v end
+  neu.n, neu.gewinn, neu.kosten, neu.t = n2, g2, k2, time()
+  neu.geloggt, neu.zs, neu.zp, neu.rz, neu.rest, neu.portion = nil, nil, nil, nil, nil, nil
+  neu.halb = (t.halb or 0) + 1
+  neu.zeigGT = ((GetTime and GetTime()) or time()) - 1 -- schon gesehen: keine Schutzsperre
+  return neu
+end
 -- 2.66 „Kleiner kaufen“: nach „zu spät“ das Item sofort neu suchen (vor allem anderen). Liegt noch ein guenstiger
 -- Rest im AH, wird daraus ein neuer, kleinerer Treffer (Knopf „REST“); keine Hektik-Sperre dafuer.
 function GF.sniperNochmal(id)
@@ -3783,11 +3811,16 @@ function GF.sniperKaufErgebnis(ok)
     d.treffer[tag] = (d.treffer[tag] or 0) + 1
     t.bezahlt = kk.unit; snLog(t, "gekauft")
     S.zuletzt = { id = t.id, n = kk.n, neu = t.neu, t = time(), ahVorher = GF.imAH and GF.imAH(t.id) or 0, portionen = t.portionen }
+    -- 2.73: Teilkauf (Portion/halbiert) geklappt -> sofort nach dem Rest suchen
+    if t.portion or t.halb then GF.sniperNochmal(t.id) end
     d.ausgaben = d.ausgaben or {}; d.ausgaben[tag] = (d.ausgaben[tag] or 0) + (kk.total or (kk.unit or 0) * (kk.n or 0))
   else
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " zu spät – " .. name .. " war schon weg." .. ENDE)
     t.zs = "weg"; snLog(t, "zu spät")
-    GF.sniperNochmal(t.id)
+    -- 2.73: halbe Menge sofort wieder anbieten
+    local h = not S.treffer and GF.sniperHalbieren(t)
+    if h then S.treffer = h; local D3 = GF.sniperDiag(); D3.halbiert = (D3.halbiert or 0) + 1
+    else GF.sniperNochmal(t.id) end
     local D2 = GF.sniperDiag(); D2.g["zu spät – schon weg"] = (D2.g["zu spät – schon weg"] or 0) + 1
     S.zuspaet = { name = name, t = time() }
   end
@@ -4203,6 +4236,12 @@ function GF.sniperErgebnis(id)
     if seit then t.sek = time() - seit; D2.bisTreffer = D2.bisTreffer or {}; table.insert(D2.bisTreffer, t.sek); while #D2.bisTreffer > 30 do table.remove(D2.bisTreffer, 1) end end
   end
   if t and S.rest and S.rest[id] then if time() - S.rest[id] < 30 then t.rest = true end; S.rest[id] = nil end
+  -- 2.73: grosse Treffer (ab 30 Stueck) in Portionen – erst ein Drittel (mind. 10), der Rest kommt danach als Rest-Treffer
+  if t and not t.einzel and (t.n or 0) >= 30 then
+    local n1 = math.max(10, math.ceil(t.n / 3))
+    local g1 = math.floor(t.gewinn * n1 / t.n); local k1 = math.floor(t.kosten * n1 / t.n)
+    if g1 >= 300 and g1 >= k1 * 0.10 then t.nVoll = t.n; t.n, t.gewinn, t.kosten, t.portion = n1, g1, k1, true end
+  end
   if t and not S.treffer then
     t.zeigGT = (GetTime and GetTime()) or time()
     S.treffer = t
@@ -4265,7 +4304,7 @@ function GF.sniperWarum()
     local t = {}; for _, x in ipairs(GF.sniperFokus()) do t[#t + 1] = nm(x) end
     print(GRAU .. "  Fokus: " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) ..
       ((D2.fokusMsN or 0) > 0 and (" · Ø Antwort " .. math.floor(D2.fokusMsSumme / D2.fokusMsN) .. " ms") or "") .. " · ohne Antwort " .. (D2.fokusOhneAntwort or 0) ..
-      " · gebremst " .. (D2.gebremst or 0) .. " · „teurer“ angenommen " .. (D2.teurerOk or 0) .. ENDE)
+      " · gebremst " .. (D2.gebremst or 0) .. " · „teurer“ angenommen " .. (D2.teurerOk or 0) .. " · halbiert " .. (D2.halbiert or 0) .. ENDE)
   end
   local T2 = D2.tasten
   if T2 then print(GRAU .. "  Tasten: drücken " .. T2.runter .. " · loslassen " .. T2.los .. " (davon Preis noch nicht da " .. T2.losOhnePreis .. ") · ohne Angabe " .. T2.ohneArt ..

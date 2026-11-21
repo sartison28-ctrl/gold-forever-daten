@@ -3559,10 +3559,12 @@ function GF.sniperZeigen()
   local S = GF.sniper
   snF:SetShown(GF.ah ~= nil)
   if not GF.ah then snBindung(false); return end
-  local an1, an2 = S.an and S.modus == "sicher", S.an and S.modus ~= "sicher"
+  local an1, an2, an3 = S.an and S.modus == "sicher", S.an and S.modus == "alle", S.an and S.modus == "fokus"
   snF.sicher.bg:SetColorTexture(an1 and 0.29 or 0.3, an1 and 0.87 or 0.3, an1 and 0.5 or 0.3, an1 and 0.55 or 0.3)
   snF.alle.bg:SetColorTexture(an2 and 0.22 or 0.3, an2 and 0.74 or 0.3, an2 and 0.97 or 0.3, an2 and 0.55 or 0.3)
   snF.sicher:SetText(an1 and "Sicher: AN" or "Sicher"); snF.alle:SetText(an2 and "Alle: AN" or "Alle")
+  snF.fokusK.bg:SetColorTexture(an3 and 0.98 or 0.3, an3 and 0.75 or 0.3, an3 and 0.15 or 0.3, an3 and 0.55 or 0.3)
+  snF.fokusK:SetText(an3 and "Fokus: AN" or "Fokus")
   local t = S.treffer
   if t and time() - t.t > 45 then
     if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
@@ -3595,7 +3597,10 @@ function GF.sniperZeigen()
     if snF.icon then snF.icon:Hide(); snF.name:Hide() end
     local n = #S.liste
     local was
-    if S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
+    if S.an and S.modus == "fokus" then
+      local t2 = {}; for _, x in ipairs(GF.sniperFokus()) do t2[#t2 + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x)) end
+      was = GOLD .. "Fokus" .. ENDE .. GRAU .. ": " .. (#t2 > 0 and table.concat(t2, ", ") or "keine Items – /gf sniper fokus [Item]") .. (S.fokusRunde and (" · je " .. string.format("%.1f", S.fokusRunde):gsub("%.", ",") .. " Sek.") or "")
+    elseif S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
     elseif S.browseLaeuft then was = "durchsucht das AH … " .. (S.browseN or 0) .. " Items"
     else was = "Durchgang " .. (S.zyklus or 0) .. " · " .. (S.browseN or 0) .. " Items gesehen" end
     if S.zuspaet and time() - S.zuspaet.t < 20 then was = ORANGE .. "Zu spät: " .. S.zuspaet.name .. " war schon weg" .. ENDE .. GRAU .. " · " .. was end
@@ -3608,7 +3613,7 @@ function GF.sniperZeigen()
         " – aus dem Briefkasten holen, dann sofort einstellen je " .. GF.geld(zl.neu) .. (zl.portionen and (" (in " .. zl.portionen .. " Portionen)") or "") .. ENDE .. GRAU .. " · " .. was
     end
     snF.info:SetText(S.an and (GRAU .. was .. " · Kandidaten " .. (S.kandidaten or 0) .. " · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
-      or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sniper“ startet die Suche · Taste " .. snDB().taste .. ENDE))
+      or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sicher“, „Alle“ oder „Fokus“ startet · Taste " .. snDB().taste .. ENDE))
   end
 end
 local function gt() return (GetTime and GetTime()) or time() end
@@ -3756,8 +3761,10 @@ local function snBauen()
   end
   snF.sicher = modusKnopf("sicher", "Sicher", 6, "Nur grüne (sichere) Treffer. Kauf mit einem Tastendruck. Nochmal klicken = aus.")
   snF.alle = modusKnopf("alle", "Alle", 88, "Grüne, blaue und orange Treffer. Blau/orange brauchen zwei Tastendrücke (Schutz vor Verdrücken). Nochmal klicken = aus.")
+  -- 2.68 (Wunsch Alex 21.11. 22:37): Fokus-Sniper – nur die Fokus-Items (Leder/Stoffe), so schnell wie moeglich
+  snF.fokusK = modusKnopf("fokus", "Fokus", 170, "Nur die Fokus-Items (Leder/Stoffe, /gf sniper fokus), so schnell wie Blizzard es erlaubt – keine große Durchsuche. Für umkämpfte Ware. Nochmal klicken = aus.")
   snF.an = snF.sicher
-  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.alle, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
+  snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.fokusK, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
   local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
   -- 2.58.2: Item-Icon + Name links, Knopf rechts daneben
   snF.icon = snF:CreateTexture(nil, "ARTWORK"); snF.icon:SetSize(30, 30); snF.icon:SetPoint("BOTTOMLEFT", 6, 5); snF.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92); snF.icon:Hide()
@@ -3958,6 +3965,32 @@ local function snSchritt()
   -- AH-Sperre von Blizzard beachten (sonst gehen Anfragen verloren)
   if C_AuctionHouse.IsThrottledMessageSystemReady and not C_AuctionHouse.IsThrottledMessageSystemReady() then return end
   local browse = C_AuctionHouse and C_AuctionHouse.SendBrowseQuery
+  -- 2.68 Fokus-Modus: NUR Fokus-Items, naechste Suche sobald die letzte beantwortet ist (min. 0,15 Sek. Abstand)
+  if S.modus == "fokus" then
+    local fk = GF.sniperFokus()
+    if #fk == 0 then GF.sniperZeigen(); return end
+    local jetztG = (GetTime and GetTime()) or time()
+    local warte = 0.15 - (jetztG - (S.fokusT or 0))
+    if warte > 0 then
+      if C_Timer and not S.fokusGeplant then S.fokusGeplant = true; C_Timer.After(warte, function() S.fokusGeplant = nil; GF.sniperSchritt() end) end
+      return
+    end
+    for _ = 1, #fk do
+      S.fokusI = ((S.fokusI or 0) % #fk) + 1
+      local id = fk[S.fokusI]
+      if not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
+        if S.fokusI == 1 then
+          if S.fokusRundeStart then S.fokusRunde = jetztG - S.fokusRundeStart end
+          S.fokusRundeStart = jetztG
+        end
+        S.fokusT = jetztG; S.fokusNaechste = id
+        S.fundZeit = S.fundZeit or {}; S.fundZeit[id] = time()
+        local D2 = GF.sniperDiag(); D2.fokusN = (D2.fokusN or 0) + 1
+        snSuche(id); GF.sniperZeigen(); return
+      end
+    end
+    GF.sniperZeigen(); return
+  end
   -- 2.67 Fokus-Snipe: alle 0,5 Sek. ein Leder/Stoff gezielt abfragen (vor Warteschlange und Durchsuche)
   if browse and not snDB().fokusAus then
     local fk = GF.sniperFokus()
@@ -4071,8 +4104,13 @@ function GF.sniperUmschalten(an, modus)
   if S.an then
     GF.sniperListe(true)
     if not S.laeuft then S.laeuft = true; snTick() end
+    if S.modus == "fokus" then
+      local t2 = {}; for _, x in ipairs(GF.sniperFokus(true)) do t2[#t2 + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x)) end
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an (" .. GOLD .. "Fokus" .. ENDE .. ") – nur " .. (#t2 > 0 and table.concat(t2, ", ") or "—") .. ", so schnell wie möglich. Liste ändern: /gf sniper fokus [Item]. Taste " .. snDB().taste .. " gut ¼ Sek. halten oder Mausrad über dem Knopf = Kauf mit einem Druck.")
+    else
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an (" .. (S.modus == "sicher" and (GRUEN .. "Sicher – nur grüne Treffer, 1 Tastendruck" .. ENDE) or (BLAU .. "Alle – blau/orange mit 2 Tastendrücken" .. ENDE)) .. ") – durchsucht " .. ((C_AuctionHouse and C_AuctionHouse.SendBrowseQuery) and ("das ganze AH (Handwerkswaren, Verbrauchbares, Reagenzien, Verschiedenes) + Merkliste " .. #S.liste) or (#S.liste .. " Items reihum")) ..
       ". Treffer: Ton + Knopf oben am AH, Taste " .. snDB().taste .. " – drücken startet, loslassen bestätigt (Taste kurz halten = Kauf mit einem Druck; Orange: 2× drücken).")
+    end
   else
     S.treffer = nil; S.suche = nil
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " aus.")

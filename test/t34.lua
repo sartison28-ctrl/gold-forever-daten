@@ -31,3 +31,14 @@ GF.ah = GF.ah or {}
 if HandleModifiedItemClick then HandleModifiedItemClick("|cffffffff|Hitem:8170::::::::|h[Leder]|h|r") end
 zeige("Alt-Klick Hook vorhanden: " .. tostring(HandleModifiedItemClick ~= nil) .. " fokusEins " .. tostring(GoldForeverDB.sniper.fokusEins))
 zeige("Ende 2.74 ok")
+-- 2.74.1: kleiner Verlust erlaubt (<= 33 % vom Gewinn)
+KAEUFE = {}; GF.kaufLauf = nil; S.sperreBis = nil; S.ausstehend = nil
+GF.live[5631] = { t = JETZT, p = 270, st = { { p = 270, q = 20 }, { p = 388, q = 50 } } }
+S.treffer = { id = 5631, n = 20, max = 270, neu = 387, gewinn = 1960, kosten = 5400, R = 395, abw = 30, t = time(), risiko = "sicher", zeigGT = GT }
+GoldForeverDB.sniper.fokusEins = 5631
+local okE, kostE, verlE = GF.sniperExpressOk(S.treffer)
+zeige("Magiestoff-Fall: express " .. tostring(okE) .. " Verlust " .. tostring(verlE and math.floor(verlE)))
+GoldForeverDB.sniper.expressProzent = 10
+zeige("bei 10 %: " .. tostring((GF.sniperExpressOk(S.treffer))))
+GoldForeverDB.sniper.expressProzent = nil
+zeige("Ende 2.74.1 ok")

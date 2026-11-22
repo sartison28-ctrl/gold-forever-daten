@@ -3706,7 +3706,12 @@ function GF.sniperExpressOk(t)
   end
   if rest > 0 then return false end
   if GetMoney and kost > GetMoney() then return false end
-  return kost <= t.neu * 0.95 * t.n, kost
+  -- 2.74.1 (Befund 22.11. 18:22: Express loeste nie aus – der Wiederverkaufspreis liegt knapp unter dem naechsten Angebot,
+  -- „null Verlust im schlechtesten Fall“ war darum nie erfuellt). Jetzt: moeglicher Verlust <= X % vom moeglichen Gewinn
+  -- (Standard 33 %, /gf sniper express <Zahl>)
+  local verlust = kost - t.neu * 0.95 * t.n
+  local erlaubt = (t.gewinn or 0) * (snDB().expressProzent or 33) / 100
+  return verlust <= erlaubt, kost, verlust
 end
 local function snKlick(self, knopf, down)
   local S = GF.sniper
@@ -4418,7 +4423,7 @@ function GF.sniperWarum()
       ((D2.fokusMsN or 0) > 0 and (" · Ø Antwort " .. math.floor(D2.fokusMsSumme / D2.fokusMsN) .. " ms") or "") .. " · ohne Antwort " .. (D2.fokusOhneAntwort or 0) ..
       " · gebremst " .. (D2.gebremst or 0) .. " · „teurer“ angenommen " .. (D2.teurerOk or 0) .. " · halbiert " .. (D2.halbiert or 0) .. ENDE)
     if snDB().express or (D2.express or 0) > 0 then
-      print(GRAU .. "  Express " .. (snDB().express and "an" or "aus") .. ": versucht " .. (D2.express or 0) .. " · gekauft " .. (D2.expressOk or 0) .. " · fehlgeschlagen " .. (D2.expressFehl or 0) .. " · ohne Antwort " .. (D2.expressStill or 0) .. ENDE)
+      print(GRAU .. "  Express " .. (snDB().express and ("an (" .. (snDB().expressProzent or 33) .. " %)") or "aus") .. ": versucht " .. (D2.express or 0) .. " · gekauft " .. (D2.expressOk or 0) .. " · fehlgeschlagen " .. (D2.expressFehl or 0) .. " · ohne Antwort " .. (D2.expressStill or 0) .. ENDE)
     end
   end
   local T2 = D2.tasten
@@ -4455,8 +4460,9 @@ function GF.sniperBefehl(rest)
   elseif cmd == "add" and id then db.eigen[id] = true; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " in der Merkliste.")
   elseif cmd == "del" and id then db.eigen[id] = nil; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " entfernt.")
   elseif cmd == "express" then
-    db.express = not db.express
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Express-Kauf " .. (db.express and (GRUEN .. "AN" .. ENDE .. " – Start + Bestätigen mit einem Dreh/Druck, nur wenn selbst der schlechteste Fall keinen Verlust bringt (Test! Ergebnis in „Warum nicht?“)") or "aus") .. ".")
+    local pz = tonumber(wert)
+    if pz then db.expressProzent = math.max(0, math.min(100, pz)); db.express = true else db.express = not db.express end
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Express-Kauf " .. (db.express and (GRUEN .. "AN" .. ENDE .. " – Start + Bestätigen mit einem Dreh/Druck, wenn der mögliche Verlust im Pechfall höchstens " .. (db.expressProzent or 33) .. " % vom möglichen Gewinn ist (Test! Ergebnis in „Warum nicht?“). Grenze ändern: /gf sniper express 50") or "aus") .. ".")
   elseif cmd == "halbieren" then
     db.halbieren = not db.halbieren
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Halbieren nach „zu spät“ " .. (db.halbieren and "an" or "aus – stattdessen sofort neue Suche nach dem Rest (Standard)") .. ".")

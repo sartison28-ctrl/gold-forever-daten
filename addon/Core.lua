@@ -3816,6 +3816,7 @@ local function snKlick(self, knopf, down)
       if ok2 then
         local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
         t.express = true
+        print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Express: " .. k2.n .. "× " .. name .. " – Kauf gesendet …")
         S.ausstehend = { t = t, kk = { id = t.id, n = k2.n, unit = t.max, total = t.kosten, express = true }, name = name, zeit = time() }
         S.treffer = nil; S.sperreBis = gt() + 0.3
       end
@@ -3865,7 +3866,16 @@ function GF.sniperKaufErgebnis(ok)
   S.ausstehend = nil
   local t, kk, name = a.t, a.kk, a.name
   local d = snDB(); local tag = date("%Y-%m-%d")
-  if kk and kk.express then local D2 = GF.sniperDiag(); if ok then D2.expressOk = (D2.expressOk or 0) + 1 else D2.expressFehl = (D2.expressFehl or 0) + 1 end end
+  if kk and kk.express then
+    local D2 = GF.sniperDiag()
+    if ok then D2.expressOk = (D2.expressOk or 0) + 1 else
+      D2.expressFehl = (D2.expressFehl or 0) + 1
+      if (D2.expressOk or 0) == 0 and D2.expressFehl >= 3 then
+        snDB().express = nil
+        print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Express: 3× fehlgeschlagen, nie geklappt – Express ist jetzt AUS." .. ENDE)
+      end
+    end
+  end
   if ok then
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) ..
       ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
@@ -4004,10 +4014,21 @@ local function snPause()
   local S = GF.sniper
   S.pauseGrund = nil
   -- 2.74: Kauf ohne Rueckmeldung (z. B. Express von WoW still abgelehnt) nach 5 Sek. abschliessen
-  if S.ausstehend and time() - S.ausstehend.zeit > 5 then
+  -- 2.74.2 (Befund Alex 22.11. 18:36: „Treffer in 0,1 Sek. weg ohne Meldung“): WoW ignoriert das Bestaetigen vor dem Preis
+  -- still -> nach 2 Sek. ohne Antwort abbrechen, MELDEN und Express ausschalten (solange er noch nie geklappt hat)
+  if S.ausstehend and time() - S.ausstehend.zeit > ((S.ausstehend.kk and S.ausstehend.kk.express) and 2 or 5) then
     local a = S.ausstehend
-    if a.kk and a.kk.express then local D2 = GF.sniperDiag(); D2.expressStill = (D2.expressStill or 0) + 1 end
     S.ausstehend = nil
+    pcall(C_AuctionHouse.CancelCommoditiesPurchase)
+    if a.kk and a.kk.express then
+      local D2 = GF.sniperDiag(); D2.expressStill = (D2.expressStill or 0) + 1
+      if (D2.expressOk or 0) == 0 then
+        snDB().express = nil
+        print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Express: WoW hat auf „Kaufen ohne Preis“ nicht geantwortet – Express ist jetzt AUS, ab sofort wieder Start + Bestätigen." .. ENDE)
+      else
+        print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Express-Kauf ohne Antwort (" .. (a.name or "?") .. ")." .. ENDE)
+      end
+    end
     if a.t then a.t.zs = "keine Antwort"; snLog(a.t, "zu spät") end
   end
   local P = GF.pruef

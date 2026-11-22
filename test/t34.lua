@@ -42,3 +42,11 @@ GoldForeverDB.sniper.expressProzent = 10
 zeige("bei 10 %: " .. tostring((GF.sniperExpressOk(S.treffer))))
 GoldForeverDB.sniper.expressProzent = nil
 zeige("Ende 2.74.1 ok")
+-- 2.74.2: still -> Express aus
+GoldForeverDB.sniper.express = true
+local D2 = GF.sniperDiag(); D2.expressOk = 0
+GF.kaufLauf = nil; S.treffer = nil
+S.ausstehend = { t = { id = 5631, n = 20, max = 25, neu = 60, gewinn = 640, kosten = 500 }, kk = { n = 20, unit = 25, express = true }, name = "Magiestoff", zeit = time() - 3 }
+GF.sniperSchritt()
+zeige("still -> Express " .. tostring(GoldForeverDB.sniper.express))
+zeige("Ende 2.74.2 ok")

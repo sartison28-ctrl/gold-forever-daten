@@ -3478,6 +3478,9 @@ function GF.sniperBewerten(id)
   if gekauftZuletzt then frisch = {} end
   if S.rest and S.rest[id] and time() - S.rest[id] < 30 then frisch = {} end -- 2.66: Rest-Suche nach „zu spät“
   -- 2.61: sehr schnell laufende Ware (>= 500/Tag laut Daten) erst ab dem 4. Treffer pausieren
+  -- 2.73.3 (Befund Alex 22.11. 10:24: „Fokus nach einer Weile Funkstille, nach /reload wieder Treffer“): Hektik-Sperre
+  -- gilt nicht fuer Fokus-Suchen – sie sperrte das Fokus-Item still fuer 30 Min.
+  if S.fokusJetzt or S.modus == "fokus" then frisch = {} end
   if #frisch >= (((i.u or 0) >= 500) and 3 or 2) then
     S.skip = S.skip or {}; S.skip[id] = time() + 1200 -- 600 s Ruhe aus snTick + 1200 = 30 Min.
     return snNein(id, "Hektik-Sperre (30 Min.)")
@@ -3662,6 +3665,13 @@ function GF.sniperZeigen()
     if S.an and S.modus == "fokus" then
       local t2 = {}; for _, x in ipairs(GF.sniperFokus()) do t2[#t2 + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x)) end
       was = GOLD .. "Fokus" .. ENDE .. GRAU .. ": " .. (#t2 > 0 and table.concat(t2, ", ") or "keine Items – /gf sniper fokus [Item]") .. (S.fokusRunde and (" · je " .. string.format("%.1f", S.fokusRunde):gsub("%.", ",") .. " Sek.") or "")
+      -- 2.73.3: letzte Abfrage sichtbar – beweist, dass der Fokus laeuft, und zeigt den Abstand zum Treffer
+      local fl = S.fokusLetzt
+      if fl then
+        local alter = ((GetTime and GetTime()) or time()) - fl.gt
+        was = was .. "\n" .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(fl.id)) or ("Item " .. fl.id)) .. ": billigstes " .. (fl.p and GF.geld(fl.p) or "—") ..
+          " · " .. fl.grund .. " · vor " .. string.format("%.1f", alter):gsub("%.", ",") .. " Sek." .. (alter > 10 and (ENDE .. ORANGE .. " – hängt? AH kurz schließen und öffnen" .. ENDE .. GRAU) or "")
+      end
     elseif S.aktuell then was = "prüft " .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(S.aktuell)) or ("Item " .. S.aktuell))
     elseif S.browseLaeuft then was = "durchsucht das AH … " .. (S.browseN or 0) .. " Items"
     else was = "Durchgang " .. (S.zyklus or 0) .. " · " .. (S.browseN or 0) .. " Items gesehen" end
@@ -3708,7 +3718,12 @@ local function snKlick(self, knopf, down)
   end
   if not t.rz and t.zeigGT and knopf ~= "RightButton" then t.rz = math.floor((gt() - t.zeigGT) * 10 + 0.5) / 10 end
   if knopf == "RightButton" then
-    S.skip = S.skip or {}; S.skip[t.id] = time(); snLog(t, "übersprungen")
+    -- 2.73.3: im Fokus-Modus nur DIESES Angebot ueberspringen (bis ein billigeres kommt, max. 2 Min.), nicht das Item 10 Min.
+    if S.modus == "fokus" or t.fokus then
+      local l = GF.live[t.id]
+      S.skipPreis = S.skipPreis or {}; S.skipPreis[t.id] = { p = (l and l.st and l.st[1] and l.st[1].p) or t.max or 0, t = time() }
+    else S.skip = S.skip or {}; S.skip[t.id] = time() end
+    snLog(t, "übersprungen")
     if GF.kaufLauf and GF.kaufLauf.id == t.id then pcall(C_AuctionHouse.CancelCommoditiesPurchase); GF.kaufLauf = nil end
     S.treffer = nil; GF.sniperZeigen(); return
   end
@@ -4175,7 +4190,7 @@ local function snSchritt()
     for _ = 1, #fk do
       S.fokusI = ((S.fokusI or 0) % #fk) + 1
       local id = fk[S.fokusI]
-      if not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
+      do -- 2.73.3: keine Sperre im Fokus-Modus
         if S.fokusI == 1 then
           if S.fokusRundeStart then S.fokusRunde = jetztG - S.fokusRundeStart end
           S.fokusRundeStart = jetztG
@@ -4199,7 +4214,7 @@ local function snSchritt()
       for _ = 1, #fk do
         S.fokusI = ((S.fokusI or 0) % #fk) + 1
         local id = fk[S.fokusI]
-        if not (S.skip and S.skip[id] and time() - S.skip[id] < 600) then
+        do -- 2.73.3: Fokus-Items werden nie per Sperre ausgelassen
           S.fokusNaechste = id
           S.fundZeit = S.fundZeit or {}; S.fundZeit[id] = time()
           local D2 = GF.sniperDiag(); D2.fokusN = (D2.fokusN or 0) + 1
@@ -4252,6 +4267,15 @@ function GF.sniperErgebnis(id)
     D2.fokusMsN = (D2.fokusMsN or 0) + 1; D2.fokusMsSumme = (D2.fokusMsSumme or 0) + ms
   end
   local t = GF.sniperBewerten(id)
+  -- 2.73.3: per Rechtsklick uebersprungenes Fokus-Angebot nicht sofort wieder zeigen (bis billiger, max. 2 Min.)
+  local l0 = GF.live[id]
+  local p0 = l0 and l0.st and l0.st[1] and l0.st[1].p
+  local sp = S.skipPreis and S.skipPreis[id]
+  if t and sp and time() - sp.t < 120 and p0 and p0 >= sp.p then t = nil; S.letzterGrund = "übersprungen (Rechtsklick)" end
+  -- 2.73.3: Fokus-Status fuer die Leiste (letzte Abfrage: billigstes Angebot, Grund, Zeitpunkt)
+  if S.fokusJetzt then
+    S.fokusLetzt = { id = id, p = p0, grund = t and "TREFFER" or (S.letzterGrund or "kein Angebot"), gt = (GetTime and GetTime()) or time() }
+  end
   if t and S.fokusJetzt then t.fokus = true; local D2 = GF.sniperDiag(); D2.fokusTreffer = (D2.fokusTreffer or 0) + 1 end
   S.fokusJetzt = nil
   -- 2.65: Nein-Merker – Preis-Gruende bis ein billigeres Angebot kommt (max. 5 Min.), feste Gruende 30 Min.

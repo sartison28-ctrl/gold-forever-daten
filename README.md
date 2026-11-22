@@ -1,5 +1,7 @@
 # gold-forever-daten
 
+> **Addon-Code:** Das WoW-Addon „Gold Forever“ liegt seit 22.11.2026 im privaten Repo `sartison28-ctrl/gold-forever-addon`. Dieses Repo enthält nur noch die stündliche Preissammlung (Blizzard-API) und die Daten.
+
 Stündliche Auktionshaus-Daten für **WoW: Forever (EU)**. Sie werden über die Blizzard Game Data API abgerufen, von GitHub Actions (`.github/workflows/ah.yml`, jede Stunde um Minute 37 UTC, als Reserve zusätzlich um Minute 7; Blizzard aktualisiert die Daten etwa zu Minute 19) gesammelt und hier gespeichert. Gold Forever (Pipeline + Web-App) liest sie von hier.
 
 ## Einrichtung

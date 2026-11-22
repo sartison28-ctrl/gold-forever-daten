@@ -3591,7 +3591,7 @@ local function snLog(t, aus)
     wt = tonumber(date("%w", t.t)), kosten = t.kosten, rk = t.risiko, rg = t.risikoGrund, mo = GF.sniper and GF.sniper.modus,
     u = t.umsatz and math.floor(t.umsatz) or nil, Rv = t.Rv, sek = t.sek, kn = t.knaller and true or nil, ev = t.eigenVK, ez = t.einzel and true or nil,
     -- 2.66: warum zu spaet (teurer = Teil weg / weg = ganz weg) + Server-Stueckpreis; Rest-Treffer; Reaktionszeit (Anzeige -> 1. Druck)
-    zs = t.zs, zp = t.zp, rest = t.rest, rz = t.rz, fk = t.fokus, halb = t.halb, por = t.portion, nV = t.nVoll }
+    zs = t.zs, zp = t.zp, rest = t.rest, rz = t.rz, fk = t.fokus, halb = t.halb, por = t.portion, nV = t.nVoll, ex = t.express }
   while #d.log > 3000 do table.remove(d.log, 1) end -- 2.64.1: laenger aufheben (Lernen, Auswertung)
 end
 GF.sniperLog = snLog
@@ -3690,6 +3690,24 @@ function GF.sniperZeigen()
   end
 end
 local function gt() return (GetTime and GetTime()) or time() end
+-- 2.74 Express-Kauf (Wunsch Alex 22.11. 18:09, zum Testen – /gf sniper express): Start UND Bestaetigen mit derselben
+-- Eingabe, ohne auf den Serverpreis zu warten (spart ~0,35–1 Sek.). Nur wenn selbst der schlechteste Fall KEINEN Verlust
+-- bringt: alle Stueck bis zum Hoechstpreis sind weg und die Menge kommt aus den naechstteureren Angeboten (aus der Suche
+-- bekannt) – deren Kosten muessen <= Netto-Verkaufspreis bleiben. Nie bei Orange/Einzelware.
+function GF.sniperExpressOk(t)
+  if not (snDB().express and t and not t.einzel and t.risiko ~= "risiko" and t.neu and t.max) then return false end
+  local l = GF.live[t.id]; if not (l and l.st) then return false end
+  local rest, kost = t.n, 0
+  for _, x in ipairs(l.st) do
+    if x.p > t.max then
+      local q = math.min(x.q or 1, rest); kost = kost + q * x.p; rest = rest - q
+      if rest <= 0 then break end
+    end
+  end
+  if rest > 0 then return false end
+  if GetMoney and kost > GetMoney() then return false end
+  return kost <= t.neu * 0.95 * t.n, kost
+end
 local function snKlick(self, knopf, down)
   local S = GF.sniper
   local t = S.treffer; if not t then return end
@@ -3711,7 +3729,9 @@ local function snKlick(self, knopf, down)
   if S.sperreBis and gt() < S.sperreBis then return end
   -- 2.70 (Analyse 21.11. 23:02: Reaktion fast immer genau 0,3 Sek. = diese Sperre): im Fokus-Modus 0,1 Sek.
   local fokusM = S.modus == "fokus"
-  if knopf ~= "RightButton" and not los and not GF.kaufLauf and t.zeigGT and gt() - t.zeigGT < (fokusM and 0.1 or 0.25) then return end
+  -- 2.74: im Einzel-Fokus keine Sperre (du weisst, was kommt; Mindestregeln gelten weiter)
+  local sperre = fokusM and (snDB().fokusEins and not snDB().fokusAus and 0 or 0.1) or 0.25
+  if knopf ~= "RightButton" and not los and not GF.kaufLauf and t.zeigGT and gt() - t.zeigGT < sperre then return end
   if los then
     local k0 = GF.kaufLauf
     if not (k0 and k0.id == t.id and k0.unit and t.risiko ~= "risiko" and not t.einzel) then return end
@@ -3782,7 +3802,19 @@ local function snKlick(self, knopf, down)
     GF.unterbieterMerk = GF.unterbieterMerk or {}
     GF.unterbieterMerk[t.id] = { neu = t.neu, t = time(), sn = true } -- zaehlt als GF-Kauf mit Ziel = Wiederverkauf
     local ok, err = GF.kaufStarten(t.id, t.n, t.max)
-    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil end
+    if not ok then print(GOLD .. "Gold Forever Sniper:" .. ENDE .. ORANGE .. " Kaufen ging nicht – " .. tostring(err) .. ENDE); snLog(t, "fehler"); S.treffer = nil
+    elseif GF.sniperExpressOk(t) then
+      local k2 = GF.kaufLauf
+      local ok2 = pcall(C_AuctionHouse.ConfirmCommoditiesPurchase, k2.id, k2.n)
+      GF.kaufLauf = nil
+      local D2 = GF.sniperDiag(); D2.express = (D2.express or 0) + 1
+      if ok2 then
+        local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(t.id)) or ("Item " .. t.id)
+        t.express = true
+        S.ausstehend = { t = t, kk = { id = t.id, n = k2.n, unit = t.max, total = t.kosten, express = true }, name = name, zeit = time() }
+        S.treffer = nil; S.sperreBis = gt() + 0.3
+      end
+    end
   end
   GF.sniperZeigen()
 end
@@ -3828,6 +3860,7 @@ function GF.sniperKaufErgebnis(ok)
   S.ausstehend = nil
   local t, kk, name = a.t, a.kk, a.name
   local d = snDB(); local tag = date("%Y-%m-%d")
+  if kk and kk.express then local D2 = GF.sniperDiag(); if ok then D2.expressOk = (D2.expressOk or 0) + 1 else D2.expressFehl = (D2.expressFehl or 0) + 1 end end
   if ok then
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. kk.n .. "× " .. name .. " gekauft für " .. GF.geld(kk.total or kk.unit * kk.n) .. " (je " .. GF.geld(kk.unit) ..
       ") – Wiederverkauf je " .. GF.geld(t.neu) .. ", liegt gleich im Briefkasten.")
@@ -3965,6 +3998,13 @@ end
 local function snPause()
   local S = GF.sniper
   S.pauseGrund = nil
+  -- 2.74: Kauf ohne Rueckmeldung (z. B. Express von WoW still abgelehnt) nach 5 Sek. abschliessen
+  if S.ausstehend and time() - S.ausstehend.zeit > 5 then
+    local a = S.ausstehend
+    if a.kk and a.kk.express then local D2 = GF.sniperDiag(); D2.expressStill = (D2.expressStill or 0) + 1 end
+    S.ausstehend = nil
+    if a.t then a.t.zs = "keine Antwort"; snLog(a.t, "zu spät") end
+  end
   local P = GF.pruef
   if P and P.aktiv then
     if time() - (P.t or 0) > 10 then P.aktiv = false; P.liste = {}; P.aktuell = nil
@@ -4001,6 +4041,15 @@ function GF.istLederStoff(id)
   local name = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(id))
   if not name then return false end
   return name:find("Leder$") ~= nil or name:find("stoff$") ~= nil or name:find("stoffballen$") ~= nil
+end
+-- 2.74 (Wunsch Alex 22.11. 18:09: „einfacher“): Alt+Klick auf ein Item (Tasche, AH-Liste, Chat-Link) bei offenem AH
+-- = Fokus nur auf dieses Item
+if hooksecurefunc then
+  pcall(hooksecurefunc, "HandleModifiedItemClick", function(link)
+    if not (GF.ah and IsAltKeyDown and IsAltKeyDown() and type(link) == "string") then return end
+    local id = tonumber(link:match("item:(%d+)"))
+    if id and GF.sniperFokusWaehlen then snDB().fokusAus = nil; GF.sniperFokusWaehlen(id) end
+  end)
 end
 -- 2.69 (Wunsch Alex 21.11. 22:47: „nur auf EIN Item konzentrieren, Wechsel einfach im Addon einstellbar“):
 -- snDB().fokusEins = gewaehltes Item -> Fokus nur auf dieses eine. GF.sniperFokusKandidaten() = Auswahlliste (max. 10).
@@ -4368,6 +4417,9 @@ function GF.sniperWarum()
     print(GRAU .. "  Fokus: " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) ..
       ((D2.fokusMsN or 0) > 0 and (" · Ø Antwort " .. math.floor(D2.fokusMsSumme / D2.fokusMsN) .. " ms") or "") .. " · ohne Antwort " .. (D2.fokusOhneAntwort or 0) ..
       " · gebremst " .. (D2.gebremst or 0) .. " · „teurer“ angenommen " .. (D2.teurerOk or 0) .. " · halbiert " .. (D2.halbiert or 0) .. ENDE)
+    if snDB().express or (D2.express or 0) > 0 then
+      print(GRAU .. "  Express " .. (snDB().express and "an" or "aus") .. ": versucht " .. (D2.express or 0) .. " · gekauft " .. (D2.expressOk or 0) .. " · fehlgeschlagen " .. (D2.expressFehl or 0) .. " · ohne Antwort " .. (D2.expressStill or 0) .. ENDE)
+    end
   end
   local T2 = D2.tasten
   if T2 then print(GRAU .. "  Tasten: drücken " .. T2.runter .. " · loslassen " .. T2.los .. " (davon Preis noch nicht da " .. T2.losOhnePreis .. ") · ohne Angabe " .. T2.ohneArt ..
@@ -4402,6 +4454,9 @@ function GF.sniperBefehl(rest)
     if cmd == "" then GF.sniperUmschalten() else GF.sniperUmschalten(cmd == "an") end
   elseif cmd == "add" and id then db.eigen[id] = true; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " in der Merkliste.")
   elseif cmd == "del" and id then db.eigen[id] = nil; GF.sniperListe(true); print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " " .. (wert or id) .. " entfernt.")
+  elseif cmd == "express" then
+    db.express = not db.express
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Express-Kauf " .. (db.express and (GRUEN .. "AN" .. ENDE .. " – Start + Bestätigen mit einem Dreh/Druck, nur wenn selbst der schlechteste Fall keinen Verlust bringt (Test! Ergebnis in „Warum nicht?“)") or "aus") .. ".")
   elseif cmd == "halbieren" then
     db.halbieren = not db.halbieren
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Halbieren nach „zu spät“ " .. (db.halbieren and "an" or "aus – stattdessen sofort neue Suche nach dem Rest (Standard)") .. ".")

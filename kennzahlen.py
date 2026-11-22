@@ -14,6 +14,8 @@ damit der Tagesrhythmus (Tageshoch/-tief) keinen Trend vortäuscht:
     vt1 geschätzte Verkäufe in den letzten 24 Std.
     vp  Median-Stückpreis der geschätzten Verkäufe, letzte 7 Tage (mengengewichtet, seit 17.11.)
     vpn Stück, aus denen vp berechnet ist
+    vpmin schlechtester Tages-Verkaufspreis der letzten 7 Tage (Tage mit ≥ 20 verkauften Stück; ab 4 Tagen) – Addon 2.75 Sniper
+    sp  Wochen-Spanne der Tages-Verkaufspreise: max/min × 100 (135 = 1,35×) – Addon 2.75 Sniper
     vh  Verkäufe je Stunde (UTC 0–23), letzte 7 Tage – nur ab 10 Stück
     tr1 Trend in %: Fenster 0 gegen Fenster 1
     tr3 Trend in %: Fenster 0 gegen Fenster 3
@@ -86,6 +88,7 @@ def haus_auswerten(ordner):
     mins = {}       # item -> [ [min je Stunde] je Fenster ]
     verk = {}       # item -> [Stück je Fenster]
     preise = {}     # item -> [[preis, stück]] (7 Tage)
+    tagpreise = {}  # item -> [ [[preis, stück]] je Fenster ] (7 Tage) – für vpmin/sp
     stunden = {}    # item -> [24] (7 Tage)
     stueck = {}
     for z in zeilen:
@@ -108,6 +111,7 @@ def haus_auswerten(ordner):
                     vp = zahl(z.get("verkauf_preis_median"))
                     if vp is not None:
                         preise.setdefault(item, []).append([vp, vs])
+                        tagpreise.setdefault(item, [[] for _ in range(7)])[k].append([vp, vs])
         if z["zeit_utc"] == neueste:
             stueck[item] = zahl(z.get("stueck")) or 0
     std = [len(s) for s in vergleich]
@@ -128,6 +132,12 @@ def haus_auswerten(ordner):
         if item in preise:
             e["vp"] = gew_median(preise[item])
             e["vpn"] = sum(n for _, n in preise[item])
+        if item in tagpreise:
+            tp = [gew_median(x) for x in tagpreise[item] if x and sum(n for _, n in x) >= 20]
+            tp = [x for x in tp if x]
+            if len(tp) >= 4:
+                e["vpmin"] = min(tp)
+                e["sp"] = round(max(tp) / min(tp) * 100)
         if item in stunden and sum(stunden[item]) >= 10:
             e["vh"] = stunden[item]
         if m:
@@ -147,7 +157,7 @@ def haus_auswerten(ordner):
 def realm_lua(erg, pfad):
     """Kompakte Realm-Datei fürs Addon (GoldForever_Realm.lua, ab 2.52).
 
-    GoldForeverRealm = {stand = "...", t = <Unixzeit>, i = {[id] = {m, n, m0, tr3, fall, vt, vp, st}}}
+    GoldForeverRealm = {stand = "...", t = <Unixzeit>, i = {[id] = {m, n, m0, tr3, fall, vt, vp, st, vpmin, sp}}}
       m    Median der Tagesmediane (bis 7 Tage) = „üblicher“ Realm-Preis
       n    Anzahl Tage mit Median
       m0   Median der letzten 24 Std.
@@ -162,10 +172,10 @@ def realm_lua(erg, pfad):
         if len(ms) < 2 and not e.get("vt"):
             continue
         werte = [median(ms) or 0, len(ms), (e.get("m") or [None])[0] or 0, e.get("tr3") or 0, e.get("fall") or 0,
-                 e.get("vt") or 0, e.get("vp") or 0, e.get("st") or 0]
+                 e.get("vt") or 0, e.get("vp") or 0, e.get("st") or 0, e.get("vpmin") or 0, e.get("sp") or 0]
         zeilen.append("[%s]={%s}," % (item, ",".join(str(int(round(w))) if isinstance(w, (int, float)) else "0" for w in werte)))
     with open(pfad, "w", encoding="utf-8") as f:
-        f.write("-- Gold Forever Realm-Daten (GitHub, automatisch) – Felder: m, n, m0, tr3, fall, vt, vp, st\n")
+        f.write("-- Gold Forever Realm-Daten (GitHub, automatisch) – Felder: m, n, m0, tr3, fall, vt, vp, st, vpmin, sp\n")
         f.write('GoldForeverRealm = {stand = "%s", t = %d, i = {\n' % (stand, t))
         f.write("\n".join(zeilen))
         f.write("\n}}\n")

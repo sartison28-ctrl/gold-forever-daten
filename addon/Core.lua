@@ -160,7 +160,9 @@ function GF.realm(id)
   local r = R and R.i and R.i[tonumber(id)]
   if not r then return nil end
   return { m = (r[1] or 0) > 0 and r[1] or nil, n = r[2] or 0, m0 = (r[3] or 0) > 0 and r[3] or nil, tr3 = r[4] or 0,
-    fall = r[5] or 0, vt = (r[6] or 0) > 0 and r[6] or nil, vp = (r[7] or 0) > 0 and r[7] or nil, st = r[8] or 0 }
+    fall = r[5] or 0, vt = (r[6] or 0) > 0 and r[6] or nil, vp = (r[7] or 0) > 0 and r[7] or nil, st = r[8] or 0,
+    -- 2.75: schlechtester Tages-Verkaufspreis 7 Tage, Wochen-Spanne der Tagespreise (max/min x 100) – nur in neuen Realm-Dateien
+    vpmin = (r[9] or 0) > 0 and r[9] or nil, sp = (r[10] or 0) > 0 and r[10] or nil }
 end
 function GF.realmAlter() local R = GoldForeverRealm; return R and R.t and (time() - R.t) or nil end
 -- 2.56 (Befund 49): alle Items, die GF fuer Kaufen/Pruefen betrachtet = Datendatei + Realm-Items mit
@@ -3442,7 +3444,8 @@ function GF.sniperVerkauf(id, R)
 end
 -- Preis-Gruende: bleibt das guenstigste Angebot gleich, aendert eine neue Suche nichts (Nein-Merker, 5 Min.)
 local SN_PREISGRUND = { ["nicht günstig genug"] = true, ["kein Gewinn (gleich billige Reste / nächstes Angebot zu nah)"] = true, ["Gewinn < 3s"] = true,
-  ["Gewinn < 10 % vom Einsatz"] = true, ["12-%-Zone: Gewinn < 10s"] = true, ["Menge zu hoch"] = true }
+  ["Gewinn < 10 % vom Einsatz"] = true, ["12-%-Zone: Gewinn < 10s"] = true, ["Menge zu hoch"] = true,
+  ["Gewinn < 15 % vom Einsatz"] = true, ["Gewinn < 5s"] = true, ["kaum Angebote darüber – Preis unsicher"] = true }
 -- feste Gruende: aendern sich nicht in Minuten (30 Min. nicht mehr einzeln suchen)
 local SN_FESTGRUND = { ["nicht handelbar"] = true, ["Händlerware / keine Infos"] = true, ["Preis fällt stark"] = true, ["Markt eingebrochen"] = true,
   ["kein Referenzpreis"] = true, ["Umsatz < 50/Tag"] = true }
@@ -3453,131 +3456,129 @@ function GF.istKiste(id)
   if name and (name:find("Kiste:") or name:find("^Abgefangene Kiste")) then GoldForeverDB.kisten[id] = true; return true end
   return false
 end
+-- 2.75 (Wunsch Alex 22.11. 20:09: „nur sichere / blinde Snipes, nur Fokus nach Kategorien, keine Kisten,
+-- keine 600 Stück mit 5c Gewinn“ – Plan claude/sniper-sicher-plan.md): EINE Sicherheitsregel fuer jeden Treffer.
+-- Werte einstellbar: /gf sniper sicher [schluessel wert]. marge = Mindestgewinn in % vom Einsatz (nach 5 % Gebuehr,
+-- gerechnet mit dem schlechtesten Verkaufspreis der Woche); spanne = max. Wochen-Spanne der Tagespreise in % (135 = 1,35x);
+-- trend = max. Trend 3 Tage in %; umsatz = min. Verkaeufe/Tag; menge/knaller = max. Menge in % vom Tagesumsatz (inkl. Bestand);
+-- minPreis = min. Stueckpreis (Kupfer); minGewinn = min. Gewinn je Treffer (Kupfer); tage = min. Tage Realm-Daten.
+GF.SN_SICHER = { marge = 15, spanne = 135, trend = 25, umsatz = 300, menge = 10, knaller = 25, minPreis = 50, minGewinn = 500, tage = 5 }
+local function snS(k)
+  local e = GoldForeverDB.sniper and GoldForeverDB.sniper.sicher
+  return (e and e[k]) or GF.SN_SICHER[k]
+end
+GF.sniperSicherWert = snS
+-- Fokus-Kategorien ueber die Item-Klasse (sprachunabhaengig): Handwerkswaren (7) bzw. Verbrauchbares (0) + Unterklasse
+GF.SN_KAT = {
+  { key = "fleisch", titel = "Fleisch & Fisch", k = 7, u = { [8] = true } },
+  { key = "traenke", titel = "Tränke & Elixiere", k = 0, u = { [1] = true, [2] = true, [3] = true } },
+  { key = "erz", titel = "Erz, Barren & Stein", k = 7, u = { [7] = true } },
+  { key = "stoffe", titel = "Stoffe", k = 7, u = { [5] = true } },
+  { key = "kraeuter", titel = "Kräuter", k = 7, u = { [9] = true } },
+  { key = "leder", titel = "Leder", k = 7, u = { [6] = true } },
+  { key = "verzaub", titel = "Verzauberung", k = 7, u = { [12] = true } },
+  { key = "elementar", titel = "Elementar", k = 7, u = { [10] = true } },
+}
+function GF.sniperKatTitel(key)
+  if not key or key == "alle" then return "Alle Kategorien" end
+  for _, k in ipairs(GF.SN_KAT) do if k.key == key then return k.titel end end
+  return key
+end
+function GF.sniperKatVon(id)
+  local f = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+  if not f then return nil end
+  local ok, _, _, _, _, _, klasse, unter = pcall(f, id)
+  if not ok or not klasse then return nil end
+  for _, k in ipairs(GF.SN_KAT) do if k.k == klasse and k.u[unter] then return k.key end end
+  return nil
+end
+-- Grundpruefung ohne Angebot: ist das Item stabil genug zum „blind kaufen“?
+-- Rueckgabe: ok, grund, w (sicherer Verkaufspreis = schlechtester der Woche), umsatz, R
+function GF.sniperStabil(id, i)
+  id = tonumber(id); i = i or GF.info(id)
+  if not i or i.vb or GF.HAENDLERWARE[id] then return false, "Händlerware / keine Infos" end
+  if GF.istKiste(id) then return false, "Kiste – nie im Sniper" end
+  if not GF.handelbar(i) then return false, "nicht handelbar" end
+  local R, _, _, eingebr = GF.referenz(id, i)
+  if not R then return false, "kein Referenzpreis" end
+  if eingebr then return false, "Markt eingebrochen" end
+  if i.nurRealm then return false, "wenig Daten (nur Realm)" end
+  local erf = GF.erfahrung(id)
+  if erf and erf.vorsicht then return false, "schlechte Erfahrung" end
+  local rl = GF.realm(id)
+  if not rl or (rl.n or 0) < snS("tage") then return false, "zu wenig Realm-Daten (< " .. snS("tage") .. " Tage)" end
+  if not rl.vp then return false, "keine echten Verkaufspreise" end
+  local umsatz = GF.sniperUmsatz(id, i)
+  if umsatz < snS("umsatz") then return false, "Umsatz < " .. snS("umsatz") .. "/Tag" end
+  -- Wochen-Spanne: Realm-Feld sp (ab Daten 2.75); sonst vorsichtig 24-Std.-Median gegen 7-Tage-Median
+  local sp = rl.sp
+  if not sp and rl.m and rl.m0 then sp = math.floor(math.max(rl.m, rl.m0) / math.max(1, math.min(rl.m, rl.m0)) * 100 + 0.5) end
+  if sp and sp > snS("spanne") then return false, "Preis wackelt (" .. (string.format("%.2f", sp / 100):gsub("%.", ",")) .. "×)" end
+  local tr = rl.tr3 or 0
+  if math.abs(tr) > snS("trend") then return false, "Trend " .. (tr > 0 and "+" or "") .. tr .. " % in 3 Tagen" end
+  if (rl.fall or 0) >= 3 or GF.faelltTage(id) then return false, "Preis fällt" end
+  -- sicherer Verkaufspreis = schlechtester Tages-Verkaufspreis der Woche (vpmin), sonst min(vp, m, m0); eigener Verkauf, falls niedriger
+  local w = rl.vpmin
+  if not w then
+    w = rl.vp
+    if rl.m and rl.m < w then w = rl.m end
+    if rl.m0 and rl.m0 < w then w = rl.m0 end
+  end
+  local eVK = GF.eigenerVK(id)
+  if eVK and eVK < w then w = eVK end
+  if w < snS("minPreis") then return false, "Stückpreis < " .. GF.geld(snS("minPreis")) end
+  return true, nil, w, umsatz, R
+end
 function GF.sniperBewerten(id)
   id = tonumber(id)
   local l = GF.live[id]; if not (l and l.st and #l.st > 0 and not l.voll) then return snNein(id, "schon weg / kein Angebot") end
-  local i = GF.info(id); if not i or i.vb or GF.HAENDLERWARE[id] then return snNein(id, "Händlerware / keine Infos") end
-  if not GF.handelbar(i) then return snNein(id, "nicht handelbar") end
-  if GF.sniperFaellt(id, i.u) then return snNein(id, "Preis fällt stark") end
-  local R, _, _, eingebr = GF.referenz(id, i); if not R or eingebr then return snNein(id, eingebr and "Markt eingebrochen" or "kein Referenzpreis") end
-  -- 2.58 (Wunsch Alex): Items mit wenig Umsatz (< 50/Tag) nicht snipen – ausser selbst in die Merkliste eingetragen
-  if (i.u or 0) < 50 and not snDB().eigen[id] then return snNein(id, "Umsatz < 50/Tag") end
-  -- 2.58.2 (Befund 53, 600× Wuttrank): Hektik-Sperre – mehrere Treffer zum selben Item in kurzer Zeit
-  -- = oft neues billiges Angebot (neuer Preis) statt Schnaeppchen -> Item 30 Min. pausieren
-  local S = GF.sniper
-  S.hits = S.hits or {}
-  local h = S.hits[id] or {}
-  local frisch = {}; for _, t0 in ipairs(h) do if time() - t0 < 600 then frisch[#frisch + 1] = t0 end end
-  S.hits[id] = frisch
-  -- 2.64 (Wunsch Alex): Hektik-Sperre nur, wenn die letzten Treffer NICHT gekauft wurden (übersprungen/verfallen/zu spät)
-  local gekauftZuletzt = false
-  for k2 = #(snDB().log or {}), math.max(1, #(snDB().log or {}) - 20), -1 do
-    local lg = snDB().log[k2]
-    if lg and lg.id == id and time() - (lg.t or 0) < 600 and (lg.aus == "gekauft" or lg.aus == "zu spät") then gekauftZuletzt = true; break end -- 2.67: „zu spät“ = Konkurrenz, keine Preis-Hektik
-  end
-  if gekauftZuletzt then frisch = {} end
-  if S.rest and S.rest[id] and time() - S.rest[id] < 30 then frisch = {} end -- 2.66: Rest-Suche nach „zu spät“
-  -- 2.61: sehr schnell laufende Ware (>= 500/Tag laut Daten) erst ab dem 4. Treffer pausieren
-  -- 2.73.3 (Befund Alex 22.11. 10:24: „Fokus nach einer Weile Funkstille, nach /reload wieder Treffer“): Hektik-Sperre
-  -- gilt nicht fuer Fokus-Suchen – sie sperrte das Fokus-Item still fuer 30 Min.
-  if S.fokusJetzt or S.modus == "fokus" then frisch = {} end
-  if #frisch >= (((i.u or 0) >= 500) and 3 or 2) then
-    S.skip = S.skip or {}; S.skip[id] = time() + 1200 -- 600 s Ruhe aus snTick + 1200 = 30 Min.
-    return snNein(id, "Hektik-Sperre (30 Min.)")
-  end
-  -- 2.58.2: Umsatz vorsichtig = kleinerer Wert aus TSM-Region und Realm; Menge hoechstens ½ Tagesumsatz,
-  -- Billig-Items (< 1s) hoechstens 200 Stueck; Gesamt-Budget fuer Snipes je Tag = 30 % des Kaufbudgets
-  local umsatz, rl = GF.sniperUmsatz(id, i)
-  local grenze = GF.sniperGrenze(id, i, R, umsatz)
-  local halb = math.max(1, math.floor(umsatz * 0.5))
-  local cap = math.max(3, math.floor(umsatz * 0.10))
-  -- 2.62.1 (Wunsch Alex 21.11. 03:05: „wenn ich snipen will, snipe ich bis ich 0g habe“): kein Tages-/Anteils-Budget
-  -- mehr – Grenze ist nur das Gold in der Tasche. Die Mengenregeln (½ Tagesumsatz, Billig-Deckel) bleiben als Risikoschutz.
+  local i = GF.info(id)
+  local ok, grund, w, umsatz, R = GF.sniperStabil(id, i)
+  if not ok then return snNein(id, grund) end
   local gold = GetMoney and GetMoney() or 0
-  local budget = gold
-  -- 2.58.3: sicher rechnen mit dem echten Verkaufspreis; "Knaller" (Preis <= 50 % davon) bremst die Menge nicht
-  -- 2.64: hast du das Item zuletzt billiger verkauft, rechnet der Sniper mit deinem echten Verkaufspreis
-  local Rv, eVK = GF.sniperVerkauf(id, R)
-  local eigenVKgenutzt = eVK ~= nil
+  if gold < 100 then return snNein(id, "kein Gold") end
+  local Rv = GF.sniperVerkauf(id, R)
+  -- Kaufgrenze: nach 5 % Gebuehr mindestens „marge“ % Gewinn auf den Einsatz – auch am schlechtesten Tag der Woche
+  local grenzeP = math.floor(w * 0.95 / (1 + snS("marge") / 100))
+  grenzeP = math.min(grenzeP, math.floor(Rv * GF.sniperGrenze(id, i, R, umsatz))) -- nie ueber der bisherigen Grenze (Marktwert, Erfahrung)
   local billigsterP = l.st[1] and l.st[1].p or math.huge
-  local knaller = billigsterP <= Rv * 0.5
-  if budget < 100 then return snNein(id, "kein Gold") end
-  -- 2.66.1 (Wunsch Alex 21.11. 22:13): Kisten hoechstens 10 Stueck inkl. Bestand – Menge schon hier begrenzen
-  local kiste = GF.istKiste(id)
-  if kiste then
-    local schonK = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
-    cap = math.min(cap, 10 - schonK)
-    if cap < 1 then return snNein(id, "Kiste: du hast schon " .. schonK .. " (max. 10)") end
-  end
+  local knaller = billigsterP <= w * 0.5
+  -- Menge: hoechstens 10 % des Tagesumsatzes (Knaller 25 %) – inklusive dem, was du schon hast (Tasche/Bank/AH)
+  local schon = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
+  local deckel = math.floor(umsatz * (knaller and snS("knaller") or snS("menge")) / 100) - schon
+  if deckel < 1 then return snNein(id, "du hast schon genug (" .. schon .. ")") end
   local n, kosten, maxP, naechster = 0, 0, 0, nil
   for _, x in ipairs(l.st) do
-    if x.p <= Rv * grenze and n < cap then
-      local q = math.min(x.q or 1, cap - n)
-      if kosten + q * x.p > budget then q = math.floor((budget - kosten) / x.p) end
-      -- 2.65: Einzel-Auktionen (auch Stapel) lassen sich nur ganz kaufen
-      if l.einzel and q < (x.q or 1) then naechster = x.p; break end
-      if q <= 0 then break end
-      n = n + q; kosten = kosten + q * x.p; maxP = math.max(maxP, x.p)
-      if q < (x.q or 1) then naechster = x.p; break end
-    elseif x.p > Rv * grenze then naechster = x.p; break end
+    if x.p > grenzeP or n >= deckel then naechster = x.p; break end
+    local q = math.min(x.q or 1, deckel - n)
+    if kosten + q * x.p > gold then q = math.floor((gold - kosten) / x.p) end
+    if l.einzel and q < (x.q or 1) then naechster = x.p; break end
+    if q <= 0 then naechster = x.p; break end
+    n = n + q; kosten = kosten + q * x.p; maxP = math.max(maxP, x.p)
+    if q < (x.q or 1) then naechster = x.p; break end
   end
-  if n < 1 then return snNein(id, "nicht günstig genug", { p = billigsterP, R = Rv, grenze = grenze }) end
-  -- 2.58.2: Wiederverkauf knapp unter dem naechsten fremden Angebot – bleiben gleich billige Stuecke im AH
-  -- liegen (Teilkauf einer Stufe), liegt der Verkaufspreis darunter (kein Gewinn -> kein Treffer)
-  local neu = math.min(Rv, naechster and (naechster - 1) or Rv)
+  if n < 1 then return snNein(id, "nicht günstig genug", { p = billigsterP, R = w }) end
+  -- Reset-Schutz: ohne Angebote darueber ist der Wiederverkaufspreis nicht belegt
+  if not naechster or naechster > Rv * 1.5 then return snNein(id, "kaum Angebote darüber – Preis unsicher", { p = maxP, R = w, n = n }) end
+  -- Wiederverkauf knapp unter dem naechsten fremden Angebot, hoechstens zum sicheren Verkaufspreis
+  local neu = math.min(w, naechster - 1)
   local gewinn = math.floor(neu * 0.95 * n - kosten)
-  -- 2.57.1: Preistreppe (bis 1 Tagesumsatz) – lohnt das Aufkaufen bis zur naechsten Luecke mehr?
-  -- 2.63.4 (Befund 67, Schildkroetenschuppe 21.11.): vorhandener Bestand (Tasche/Bank/AH) zaehlt mit
-  local schonVorher = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
-  local deckel = halb - schonVorher
-  if R < 100 then deckel = math.min(deckel, 200) end
-  if knaller then deckel = math.max(deckel, math.floor(umsatz) - schonVorher) end -- Knaller: bis 1 Tagesumsatz, kein Billig-Deckel
-  -- 2.66.1 (Wunsch Alex 21.11. 22:13: „keine Kisten mehr, wenn dann max. 5–10 Stück“): Kisten (z. B. „Abgefangene Kiste: …“)
-  -- hoechstens 10 Stueck – inkl. dem, was du schon hast (Tasche/Bank/AH)
-  if kiste then
-    deckel = math.min(deckel, 10 - schonVorher)
-    if deckel < 1 then return snNein(id, "Kiste: du hast schon " .. schonVorher .. " (max. 10)") end
-  end
-  if deckel < 1 then return snNein(id, "du hast schon genug (" .. schonVorher .. ")") end
-  local T = (not l.einzel) and GF.treppe(id, R, math.floor(Rv * grenze), deckel, budget, Rv) or nil
-  if T and T.gewinn > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, T.neu, T.gewinn end
-  if n > deckel then return snNein(id, "Menge zu hoch", { p = maxP, R = Rv, n = n }) end
-  if gewinn < SN_MIN then return snNein(id, gewinn <= 0 and "kein Gewinn (gleich billige Reste / nächstes Angebot zu nah)" or "Gewinn < 3s", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
-  -- 2.63.4 (Wunsch Alex 21.11. 16:57): Gewinn muss zum Einsatz passen – mind. 10 % des Einsatzes
-  -- (1–2g Einsatz -> 10–20s ok; 15g Einsatz -> mind. 1g 50s)
-  if gewinn < kosten * 0.10 then return snNein(id, "Gewinn < 10 % vom Einsatz", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
-  -- 2.61: neue Zone (weniger als 15 % unter ueblich) nur mit mind. 10s Gewinn nach Gebuehr – sonst lohnt der Klick nicht
-  if maxP > Rv * 0.85 and gewinn < SN_MIN_LEINE then return snNein(id, "12-%-Zone: Gewinn < 10s", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
-  frisch[#frisch + 1] = time()
-  -- 2.62.1 (Wunsch Alex): Treffer farblich einordnen – gruen sicher / blau ok / orange Risiko
-  local erf = GF.erfahrung(id)
-  local tage = umsatz > 0 and n / umsatz or 99
-  local risikoGrund
+  -- Preistreppe (bis zur Mengengrenze): lohnt das Aufkaufen bis zur naechsten Luecke mehr? Gleich sicher gerechnet.
+  local T = (not l.einzel) and GF.treppe(id, R, grenzeP, deckel, gold, w) or nil
+  if T and T.n <= deckel and T.naechster and T.naechster <= Rv * 1.5 then
+    local neuT = math.min(w, T.neu)
+    local gT = math.floor(neuT * 0.95 * T.n - T.kosten)
+    if gT > gewinn then n, kosten, maxP, neu, gewinn = T.n, T.kosten, T.max, neuT, gT else T = nil end
+  else T = nil end
+  if gewinn < kosten * snS("marge") / 100 then return snNein(id, "Gewinn < " .. snS("marge") .. " % vom Einsatz", { p = maxP, R = w, n = n, gewinn = gewinn }) end
+  if gewinn < snS("minGewinn") then return snNein(id, "Gewinn < " .. GF.geld(snS("minGewinn")), { p = maxP, R = w, n = n, gewinn = gewinn }) end
   local einzel = GoldForeverDB.einzelItem and GoldForeverDB.einzelItem[id]
-  -- 2.62.2: schon vorhandene Menge (Tasche/Bank/AH) mitdenken – Analyse 21.11.: oft übersprungen, weil schon genug da
-  local schon = (GF.anzahl(id) or 0) + (GF.imAH and GF.imAH(id) or 0)
-  if erf and erf.vorsicht then risikoGrund = "schlechte Erfahrung"
-  elseif schon > 0 and umsatz > 0 and (schon + n) / umsatz > 0.5 then risikoGrund = "du hast schon " .. schon
-  elseif umsatz < 100 then risikoGrund = "wenig Umsatz (" .. math.floor(umsatz + 0.5) .. "/Tag)"
-  elseif i.nurRealm then risikoGrund = "wenig Daten (nur Realm)"
-  elseif einzel then risikoGrund = "Einzelware – Preis schwankt"
-  elseif GF.faelltTage(id) then risikoGrund = "Preis fällt"
-  elseif tage > 0.5 then risikoGrund = "Menge > ½ Tag Umsatz"
-  elseif Rv < R * 0.85 then risikoGrund = "verkauft meist unter üblich"
-  elseif not naechster or naechster > Rv * 1.5 then risikoGrund = "kaum Angebote darüber – Preis unsicher" -- 2.64 Reset-Schutz (Befund 56)
-  end
-  local risiko = risikoGrund and "risiko" or (((erf and erf.bewaehrt) or (umsatz >= 200 and tage <= 0.25)) and "sicher" or "ok")
-  -- 2.63.4: hoher Einsatz (>= 5g) nur, wenn der Treffer nicht riskant ist und der Verkaufspreis durch echte Verkaeufe belegt ist
-  if kosten >= 50000 and not knaller then
-    local _, belegt = GF.verkaufsRef(id, R)
-    if risiko == "risiko" then return snNein(id, "hoher Einsatz bei Risiko (" .. (risikoGrund or "") .. ")", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
-    if not (belegt or (rl and rl.vp and rl.vp > 0)) then return snNein(id, "hoher Einsatz ohne echte Verkaufspreise", { p = maxP, R = Rv, n = n, gewinn = gewinn }) end
-  end
-  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, t = time(), risiko = risiko, risikoGrund = risikoGrund, einzel = einzel, schon = schon, eigenVK = eigenVKgenutzt and eVK or nil,
-    portionen = (umsatz > 0 and n > umsatz * 0.25) and math.min(5, math.ceil(n / math.max(1, umsatz * 0.25))) or nil,
-    abw = math.floor((1 - maxP / R) * 100 + 0.5), treppe = T and T.n == n or nil, umsatz = math.floor(umsatz + 0.5), Rv = Rv, knaller = knaller or nil }
+  local eVK = GF.eigenerVK(id)
+  return { id = id, n = n, max = maxP, kosten = kosten, neu = neu, gewinn = gewinn, R = R, w = w, t = time(), risiko = "sicher", einzel = einzel, schon = schon,
+    eigenVK = (eVK and eVK <= w) and eVK or nil,
+    portionen = (umsatz > 0 and n > umsatz * 0.05) and math.min(5, math.ceil(n / math.max(1, umsatz * 0.05))) or nil,
+    abw = math.floor((1 - maxP / w) * 100 + 0.5), treppe = T and true or nil, umsatz = math.floor(umsatz + 0.5), Rv = w, knaller = knaller or nil }
 end
-
 -- Anzeige: Leiste oben am Auktionshaus
 -- 2.57.1: Sniper-Protokoll (nur Daten fuer das Lernsystem): jeder Treffer mit Ausgang
 -- GoldForeverDB.sniper.log = { {t, id, n, max, R, neu, gewinn, abw, aus = "gekauft"|"verfallen"|"übersprungen"|"zu teuer"|"fehler"} } (max. 500)
@@ -3611,13 +3612,10 @@ function GF.sniperZeigen()
   local S = GF.sniper
   snF:SetShown(GF.ah ~= nil)
   if not GF.ah then snBindung(false); return end
-  local an1, an2, an3 = S.an and S.modus == "sicher", S.an and S.modus == "alle", S.an and S.modus == "fokus"
-  snF.sicher.bg:SetColorTexture(an1 and 0.29 or 0.3, an1 and 0.87 or 0.3, an1 and 0.5 or 0.3, an1 and 0.55 or 0.3)
-  snF.alle.bg:SetColorTexture(an2 and 0.22 or 0.3, an2 and 0.74 or 0.3, an2 and 0.97 or 0.3, an2 and 0.55 or 0.3)
-  snF.sicher:SetText(an1 and "Sicher: AN" or "Sicher"); snF.alle:SetText(an2 and "Alle: AN" or "Alle")
+  local an3 = S.an
   snF.fokusK.bg:SetColorTexture(an3 and 0.98 or 0.3, an3 and 0.75 or 0.3, an3 and 0.15 or 0.3, an3 and 0.55 or 0.3)
   snF.fokusK:SetText(an3 and "Fokus: AN" or "Fokus")
-  local fe = snDB().fokusEins and not snDB().fokusAus
+  local fe = true
   snF.pfeil.bg:SetColorTexture(fe and 0.98 or 0.3, fe and 0.75 or 0.3, fe and 0.15 or 0.3, 0.35)
   local t = S.treffer
   if t and time() - t.t > 45 then
@@ -3643,7 +3641,7 @@ function GF.sniperZeigen()
       snF.knopf.t:SetText(RF .. (t.halb and (GOLD .. "NOCHMAL  " .. ENDE) or "") .. (t.portion and (GOLD .. "TEIL 1  " .. ENDE) or "") .. (t.rest and (GOLD .. "REST  " .. ENDE) or "") .. (t.knaller and (GOLD .. "KNALLER  " .. ENDE) or "") .. (t.einzel and "KAUFEN (je Klick 1 Auktion)  " or "KAUFEN  ") .. t.n .. "× = " .. GF.geld(t.kosten) .. "   " .. GRUEN .. "Gewinn +" .. GF.geld(t.gewinn) .. " (" .. math.floor(t.gewinn / math.max(1, t.kosten) * 100 + 0.5) .. " %)" .. ENDE .. "   [" .. snDB().taste .. "]")
     end
     local tage = (t.umsatz and t.umsatz > 0) and (t.n / t.umsatz) or nil
-    snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter üblich " .. GF.geld(t.R) .. ((t.Rv and t.Rv < t.R) and (", verkauft meist " .. GF.geld(t.Rv)) or "") .. ") · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
+    snF.info:SetText(GRAU .. "je " .. ENDE .. GF.geld(t.max) .. GRAU .. " (" .. t.abw .. " % unter " .. GF.geld(t.w or t.R) .. " = schlechtester Verkaufstag der Woche) · Verkauf je " .. ENDE .. GF.geld(t.neu) ..
       GRAU .. (t.umsatz and (" · ~" .. t.umsatz .. "/Tag" .. (tage and (", Menge = " .. (tage < 0.1 and "< 0,1" or string.format("%.1f", tage):gsub("%.", ",")) .. " Tage") or "")) or "") .. ((t.schon or 0) > 0 and not (t.risikoGrund or ""):find("schon") and (" · du hast " .. t.schon) or "") .. (t.risikoGrund and (ENDE .. ORANGE .. " · Risiko: " .. t.risikoGrund .. ENDE .. GRAU) or "") .. (t.portionen and (" · in " .. t.portionen .. " Portionen einstellen") or "") .. (t.eigenVK and " · rechnet mit deinem Verkaufspreis" or "") .. " · Rechtsklick: überspringen" .. ENDE)
     snBindung(true)
     -- 2.71: Kauffeld ueber dem ganzen AH nur im Fokus-Modus
@@ -3664,7 +3662,7 @@ function GF.sniperZeigen()
     local was
     if S.an and S.modus == "fokus" then
       local t2 = {}; for _, x in ipairs(GF.sniperFokus()) do t2[#t2 + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x)) end
-      was = GOLD .. "Fokus" .. ENDE .. GRAU .. ": " .. (#t2 > 0 and table.concat(t2, ", ") or "keine Items – /gf sniper fokus [Item]") .. (S.fokusRunde and (" · je " .. string.format("%.1f", S.fokusRunde):gsub("%.", ",") .. " Sek.") or "")
+      was = GOLD .. "Fokus " .. (snDB().fokusEins and "Einzel-Item" or GF.sniperKatTitel(snDB().fokusKat)) .. ENDE .. GRAU .. ": " .. (#t2 > 0 and table.concat(t2, ", ") or (ORANGE .. "gerade kein Item sicher genug – andere Kategorie (Pfeil)" .. ENDE .. GRAU)) .. (S.fokusRunde and (" · je " .. string.format("%.1f", S.fokusRunde):gsub("%.", ",") .. " Sek.") or "")
       -- 2.73.3: letzte Abfrage sichtbar – beweist, dass der Fokus laeuft, und zeigt den Abstand zum Treffer
       local fl = S.fokusLetzt
       if fl then
@@ -3686,7 +3684,7 @@ function GF.sniperZeigen()
         " – aus dem Briefkasten holen, dann sofort einstellen je " .. GF.geld(zl.neu) .. (zl.portionen and (" (in " .. zl.portionen .. " Portionen)") or "") .. ENDE .. GRAU .. " · " .. was
     end
     snF.info:SetText(S.an and (GRAU .. was .. " · Kandidaten " .. (S.kandidaten or 0) .. " · Treffer heute: " .. (snDB().treffer[date("%Y-%m-%d")] or 0) .. ENDE)
-      or (GRAU .. "Merkliste " .. n .. " Items · Klick auf „Sicher“, „Alle“ oder „Fokus“ startet · Taste " .. snDB().taste .. ENDE))
+      or (GRAU .. "Nur sichere Snipes · Kategorie: " .. ENDE .. GF.sniperKatTitel(snDB().fokusKat) .. GRAU .. " (Pfeil = wechseln) · Klick auf „Fokus“ startet · Taste " .. snDB().taste .. ENDE))
   end
 end
 local function gt() return (GetTime and GetTime()) or time() end
@@ -3913,47 +3911,53 @@ local function snBauen()
     k:SetScript("OnLeave", function() GameTooltip:Hide() end)
     return k
   end
-  snF.sicher = modusKnopf("sicher", "Sicher", 6, "Nur grüne (sichere) Treffer. Kauf mit einem Tastendruck. Nochmal klicken = aus.")
-  snF.alle = modusKnopf("alle", "Alle", 88, "Grüne, blaue und orange Treffer. Blau/orange brauchen zwei Tastendrücke (Schutz vor Verdrücken). Nochmal klicken = aus.")
+  -- 2.75 (Wunsch Alex 22.11. 20:09): „Sicher“/„Alle“ (breite Durchsuche) entfallen – nur noch Fokus mit sicheren Treffern
   -- 2.68 (Wunsch Alex 21.11. 22:37): Fokus-Sniper – nur die Fokus-Items (Leder/Stoffe), so schnell wie moeglich
-  snF.fokusK = modusKnopf("fokus", "Fokus", 170, "Nur das gewählte Fokus-Item (Pfeil daneben oder Rechtsklick = Item wählen), so schnell wie Blizzard es erlaubt – keine große Durchsuche. Für umkämpfte Ware wie Leder/Stoffe. Nochmal klicken = aus.")
+  snF.fokusK = modusKnopf("fokus", "Fokus", 6, "Fragt die Items der gewählten Kategorie (Pfeil daneben oder Rechtsklick) reihum ab, so schnell wie Blizzard es erlaubt. Nur sichere Treffer: stabiler Preis, viel Umsatz, mind. 15 % Gewinn auch am schlechtesten Verkaufstag der Woche, keine Kisten. Nochmal klicken = aus.")
   -- 2.69: Item-Auswahl (Pfeil oder Rechtsklick auf „Fokus“)
   snF.pfeil = CreateFrame("Button", nil, snF); snF.pfeil:SetSize(18, 22); snF.pfeil:SetPoint("LEFT", snF.fokusK, "RIGHT", 1, 0)
   snF.pfeil.bg = snF.pfeil:CreateTexture(nil, "BACKGROUND"); snF.pfeil.bg:SetAllPoints(); snF.pfeil.bg:SetColorTexture(0.3, 0.3, 0.3, 0.3)
   -- Pfeil als Textur (die WoW-Schrift kennt kein ▼)
   snF.pfeil.tx = snF.pfeil:CreateTexture(nil, "ARTWORK"); snF.pfeil.tx:SetSize(14, 14); snF.pfeil.tx:SetPoint("CENTER", 0, -2); snF.pfeil.tx:SetTexture("Interface\\Buttons\\Arrow-Down-Up")
-  snF.wahl = CreateFrame("Frame", nil, snF); snF.wahl:SetFrameStrata("DIALOG"); snF.wahl:SetPoint("TOPLEFT", snF.fokusK, "BOTTOMLEFT", 0, -2); snF.wahl:SetSize(230, 20)
+  snF.wahl = CreateFrame("Frame", nil, snF); snF.wahl:SetFrameStrata("DIALOG"); snF.wahl:SetPoint("TOPLEFT", snF.fokusK, "BOTTOMLEFT", 0, -2); snF.wahl:SetSize(300, 20)
   snF.wahl.bg = snF.wahl:CreateTexture(nil, "BACKGROUND"); snF.wahl.bg:SetAllPoints(); snF.wahl.bg:SetColorTexture(0.06, 0.07, 0.1, 0.97)
   snF.wahl.zeilen = {}; snF.wahl:Hide()
   local function wahlZeigen()
     local W = snF.wahl
     if W:IsShown() then W:Hide(); return end
-    local liste = { "aus", false }
-    for _, id in ipairs(GF.sniperFokusKandidaten(10)) do liste[#liste + 1] = id end
+    -- 2.75: Kategorien (Anzahl sicherer Items) + ggf. gewaehltes Einzel-Item (Alt+Klick)
+    local liste = {}
     local eins = snDB().fokusEins
-    if eins then local da = false; for _, x in ipairs(liste) do if x == eins then da = true end end; if not da then table.insert(liste, 2, eins) end end
-    for k2, id in ipairs(liste) do
+    if eins then liste[#liste + 1] = { eins = eins } end
+    liste[#liste + 1] = { kat = "alle" }
+    for _, k in ipairs(GF.SN_KAT) do liste[#liste + 1] = { kat = k.key } end
+    for k2, e in ipairs(liste) do
       local z = W.zeilen[k2]
       if not z then
-        z = CreateFrame("Button", nil, W); z:SetSize(226, 18); z:SetPoint("TOPLEFT", 2, -2 - (k2 - 1) * 18)
+        z = CreateFrame("Button", nil, W); z:SetSize(296, 18); z:SetPoint("TOPLEFT", 2, -2 - (k2 - 1) * 18)
         z.hl = z:CreateTexture(nil, "HIGHLIGHT"); z.hl:SetAllPoints(); z.hl:SetColorTexture(1, 1, 1, 0.1)
         z.fs = z:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); z.fs:SetPoint("LEFT", 6, 0); z.fs:SetJustifyH("LEFT")
         W.zeilen[k2] = z
       end
-      local name = (id == "aus" and "Kein Fokus (Sicher/Alle ohne Fokus-Suche)") or (id and ((((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id)))) or "Alle abwechselnd (bis 4 Leder/Stoffe)"
-      local aktiv = (id == "aus" and snDB().fokusAus) or (id ~= "aus" and not snDB().fokusAus and (id or nil) == eins)
+      local name, aktiv, ids
+      if e.eins then
+        name = "Nur: " .. ((((C_Item and C_Item.GetItemInfo or GetItemInfo)(e.eins)) or ("Item " .. e.eins))) .. " (Alt+Klick)"
+        aktiv = true; ids = { e.eins }
+      else
+        ids = GF.sniperFokusKandidaten(nil, e.kat)
+        name = GF.sniperKatTitel(e.kat) .. GRAU .. "  · " .. (#ids > 0 and (#ids .. " sichere Items") or "gerade keins") .. ENDE
+        aktiv = not eins and (snDB().fokusKat or "alle") == e.kat
+      end
       z.fs:SetText((aktiv and (GOLD .. "» ") or "   ") .. name .. (aktiv and ENDE or ""))
+      z:SetScript("OnEnter", function(self)
+        local t = {}; for _, x in ipairs(ids) do t[#t + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or ("Item " .. x)) end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:AddLine(e.eins and "Einzel-Item" or GF.sniperKatTitel(e.kat))
+        GameTooltip:AddLine(#t > 0 and table.concat(t, ", ") or "Gerade erfüllt kein Item die Sicherheitsregel.", 0.6, 0.6, 0.65, true); GameTooltip:Show()
+      end)
+      z:SetScript("OnLeave", function() GameTooltip:Hide() end)
       z:SetScript("OnClick", function()
         W:Hide()
-        if id == "aus" then
-          -- 2.73.2: Fokus ganz aus (keine eingestreute Fokus-Suche in „Sicher“/„Alle“)
-          snDB().fokusAus = true; snDB().fokusEins = nil; GF.sniper.fokus = nil
-          print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus aus – „Sicher“/„Alle“ durchsuchen wieder nur das ganze AH.")
-          if GF.sniper.an and GF.sniper.modus == "fokus" then GF.sniperUmschalten(true, "alle") else GF.sniperZeigen() end
-        else
-          snDB().fokusAus = nil
-          GF.sniperFokusWaehlen(id or nil)
-        end
+        if e.eins then GF.sniperFokusWaehlen(e.eins) else GF.sniperKatWaehlen(e.kat) end
       end)
       z:Show()
     end
@@ -3962,11 +3966,11 @@ local function snBauen()
   end
   GF.sniperFokusMenue = wahlZeigen
   snF.pfeil:SetScript("OnClick", wahlZeigen)
-  snF.pfeil:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Fokus-Item wählen"); GameTooltip:AddLine("Ein Item = schnellste Abfrage. Eigene Items: /gf sniper fokus [Item]", 0.6, 0.6, 0.65, true); GameTooltip:Show() end)
+  snF.pfeil:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_BOTTOM"); GameTooltip:AddLine("Fokus-Kategorie wählen"); GameTooltip:AddLine("Mehrere sichere Items einer Kategorie reihum. Einzelnes Item: Alt+Klick auf das Item.", 0.6, 0.6, 0.65, true); GameTooltip:Show() end)
   snF.pfeil:SetScript("OnLeave", function() GameTooltip:Hide() end)
   snF.fokusK:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   snF.fokusK:SetScript("OnClick", function(_, knopf) if knopf == "RightButton" then wahlZeigen() else GF.sniperUmschalten(nil, "fokus") end end)
-  snF.an = snF.sicher
+  snF.an = snF.fokusK
   snF.info = snF:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); snF.info:SetPoint("LEFT", snF.pfeil, "RIGHT", 8, 0); snF.info:SetPoint("RIGHT", -6, 0); snF.info:SetJustifyH("LEFT")
   local b = CreateFrame("Button", "GoldForeverSniperKnopf", snF)
   -- 2.58.2: Item-Icon + Name links, Knopf rechts daneben
@@ -4079,28 +4083,32 @@ if hooksecurefunc then
 end
 -- 2.69 (Wunsch Alex 21.11. 22:47: „nur auf EIN Item konzentrieren, Wechsel einfach im Addon einstellbar“):
 -- snDB().fokusEins = gewaehltes Item -> Fokus nur auf dieses eine. GF.sniperFokusKandidaten() = Auswahlliste (max. 10).
+-- 2.75: Fokus nach Kategorie (snDB().fokusKat, Standard „alle“): bis zu 4 Items (bei „alle“ 6), die die Sicherheitsregel
+-- grundsaetzlich bestehen (stabil, genug Umsatz, keine Kiste). Reihenfolge: eigene Sniper-Kaeufe/Treffer der letzten
+-- 7 Tage, dann Gold-Umsatz (Verkaeufe/Tag x sicherer Preis). snDB().fokusEins = ein einzelnes Item (Alt+Klick).
 function GF.sniperFokus(neu)
   local S = GF.sniper
   local eins = snDB().fokusEins
   if eins then return { eins } end
-  if not neu and S.fokus and time() - (S.fokusListeT or 0) < 300 then return S.fokus end
-  S.fokus, S.fokusListeT = GF.sniperFokusKandidaten(SN_FOKUS_N), time()
+  local kat = snDB().fokusKat or "alle"
+  if not neu and S.fokus and S.fokusKatAkt == kat and time() - (S.fokusListeT or 0) < 300 then return S.fokus end
+  S.fokus, S.fokusListeT, S.fokusKatAkt = GF.sniperFokusKandidaten(nil, kat), time(), kat
   return S.fokus
 end
-function GF.sniperFokusKandidaten(nMax)
-  nMax = nMax or 10
-  local db = snDB(); db.fokus = db.fokus or {}
+function GF.sniperFokusKandidaten(nMax, kat)
+  local db = snDB()
+  kat = kat or db.fokusKat or "alle"
+  nMax = nMax or (kat == "alle" and 6 or SN_FOKUS_N)
   local treffer = {}
-  local ab = time() - 3 * 86400
-  for _, e in ipairs(db.log or {}) do if (e.t or 0) >= ab and e.id then treffer[e.id] = (treffer[e.id] or 0) + 1 end end
-  local kand, out, drin = {}, {}, {}
-  for id in pairs(db.fokus) do id = tonumber(id); if id and not drin[id] then drin[id] = true; out[#out + 1] = id end end
+  local ab = time() - 7 * 86400
+  for _, e in ipairs(db.log or {}) do if (e.t or 0) >= ab and e.id then treffer[e.id] = (treffer[e.id] or 0) + ((e.aus == "gekauft") and 3 or 1) end end
+  local kand, out = {}, {}
   for id in pairs(GF.alleIds()) do
-    if not drin[id] and not GF.raid(id) and not GF.HAENDLERWARE[id] and not GF.ausgeblendet(id) and GF.istLederStoff(id) then
-      local i = GF.info(id)
-      if i and not i.vb and (i.u or 0) >= 200 and GF.handelbar(i) then
-        local R = GF.referenz(id, i)
-        if R and R > 0 then kand[#kand + 1] = { id = id, w = (treffer[id] or 0) * 1e9 + (i.u or 0) * R } end
+    if not GF.raid(id) and not GF.ausgeblendet(id) then
+      local kk = GF.sniperKatVon(id)
+      if kk and (kat == "alle" or kk == kat) then
+        local ok, _, w, umsatz = GF.sniperStabil(id)
+        if ok then kand[#kand + 1] = { id = id, w = (treffer[id] or 0) * 1e12 + umsatz * w } end
       end
     end
   end
@@ -4112,10 +4120,17 @@ function GF.sniperFokusWaehlen(id)
   local S = GF.sniper
   snDB().fokusEins = id
   S.fokus, S.fokusI, S.fokusRunde, S.fokusRundeStart = nil, 0, nil, nil
-  local name = id and (((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id)) or "alle Fokus-Items abwechselnd"
+  local name = id and (((C_Item and C_Item.GetItemInfo or GetItemInfo)(id)) or ("Item " .. id)) or GF.sniperKatTitel(snDB().fokusKat)
   print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus auf " .. name .. ".")
-  -- Auswahl = Fokus-Modus an
-  if not (S.an and S.modus == "fokus") then GF.sniperUmschalten(true, "fokus") else GF.sniperZeigen() end
+  if not S.an then GF.sniperUmschalten(true, "fokus") else GF.sniperZeigen() end
+end
+function GF.sniperKatWaehlen(key)
+  local S = GF.sniper
+  snDB().fokusKat = key or "alle"; snDB().fokusEins = nil
+  S.fokus, S.fokusI, S.fokusRunde, S.fokusRundeStart = nil, 0, nil, nil
+  local t2 = {}; for _, x in ipairs(GF.sniperFokus(true)) do t2[#t2 + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x)) end
+  print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus " .. GOLD .. GF.sniperKatTitel(key) .. ENDE .. ": " .. (#t2 > 0 and table.concat(t2, ", ") or (ORANGE .. "gerade kein Item sicher genug" .. ENDE)))
+  if not S.an then GF.sniperUmschalten(true, "fokus") else GF.sniperZeigen() end
 end
 local function snSuche(id)
   local S = GF.sniper
@@ -4350,6 +4365,7 @@ function GF.sniperErgebnis(id)
   -- 2.73.3: Fokus-Status fuer die Leiste (letzte Abfrage: billigstes Angebot, Grund, Zeitpunkt)
   if S.fokusJetzt then
     S.fokusLetzt = { id = id, p = p0, grund = t and "TREFFER" or (S.letzterGrund or "kein Angebot"), gt = (GetTime and GetTime()) or time() }
+    S.fokusGruende = S.fokusGruende or {}; S.fokusGruende[id] = S.fokusLetzt -- 2.75
   end
   if t and S.fokusJetzt then t.fokus = true; local D2 = GF.sniperDiag(); D2.fokusTreffer = (D2.fokusTreffer or 0) + 1 end
   S.fokusJetzt = nil
@@ -4377,7 +4393,7 @@ function GF.sniperErgebnis(id)
   if t and not t.einzel and (t.n or 0) >= 30 then
     local n1 = math.max(10, math.ceil(t.n / 3))
     local g1 = math.floor(t.gewinn * n1 / t.n); local k1 = math.floor(t.kosten * n1 / t.n)
-    if g1 >= 300 and g1 >= k1 * 0.10 then t.nVoll = t.n; t.n, t.gewinn, t.kosten, t.portion = n1, g1, k1, true end
+    if g1 >= snS("minGewinn") and g1 >= k1 * snS("marge") / 100 then t.nVoll = t.n; t.n, t.gewinn, t.kosten, t.portion = n1, g1, k1, true end
   end
   if t and not S.treffer then
     t.zeigGT = (GetTime and GetTime()) or time()
@@ -4404,11 +4420,10 @@ end
 function GF.sniperUmschalten(an, modus)
   local S = GF.sniper
   snBauen()
-  S.modus = S.modus or snDB().modus or "alle"
-  if modus then
-    if S.an and S.modus == modus and an == nil then an = false else an = true end
-    S.modus = modus; snDB().modus = modus
-  end
+  -- 2.75: nur noch der Fokus-Sniper (alte Modi „sicher“/„alle“ werden umgestellt)
+  if modus and S.an and an == nil then an = false elseif modus then an = true end
+  S.modus = "fokus"; snDB().modus = "fokus"
+  snDB().fokusAus = nil
   if an == nil then an = not S.an end
   S.an = an and true or false
   if S.an then
@@ -4417,7 +4432,7 @@ function GF.sniperUmschalten(an, modus)
     if S.modus == "fokus" then
       snDB().fokusAus = nil
       local t2 = {}; for _, x in ipairs(GF.sniperFokus(true)) do t2[#t2 + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x)) end
-      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an (" .. GOLD .. "Fokus" .. ENDE .. ") – nur " .. (#t2 > 0 and table.concat(t2, ", ") or "—") .. ", so schnell wie möglich. Liste ändern: /gf sniper fokus [Item]. Taste " .. snDB().taste .. " gut ¼ Sek. halten oder Mausrad über dem Knopf = Kauf mit einem Druck.")
+      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an (" .. GOLD .. "Fokus " .. (snDB().fokusEins and "Einzel-Item" or GF.sniperKatTitel(snDB().fokusKat)) .. ENDE .. ", nur sichere Treffer) – " .. (#t2 > 0 and table.concat(t2, ", ") or "gerade kein Item sicher genug") .. ". Kategorie: Pfeil neben „Fokus“. Taste " .. snDB().taste .. " oder Mausrad über dem AH = Kauf.")
     else
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " an (" .. (S.modus == "sicher" and (GRUEN .. "Sicher – nur grüne Treffer, 1 Tastendruck" .. ENDE) or (BLAU .. "Alle – blau/orange mit 2 Tastendrücken" .. ENDE)) .. ") – durchsucht " .. ((C_AuctionHouse and C_AuctionHouse.SendBrowseQuery) and ("das ganze AH (Handwerkswaren, Verbrauchbares, Reagenzien, Verschiedenes) + Merkliste " .. #S.liste) or (#S.liste .. " Items reihum")) ..
       ". Treffer: Ton + Knopf oben am AH, Taste " .. snDB().taste .. " – drücken startet, loslassen bestätigt (Taste kurz halten = Kauf mit einem Druck; Orange: 2× drücken).")
@@ -4440,7 +4455,11 @@ function GF.sniperWarum()
   if dd or bt then print(GRAU .. "  Tempo: Ø Durchgang " .. (dd and (dd .. " Sek.") or "—") .. " · Ø vom Fund bis zum Treffer " .. (bt and (bt .. " Sek.") or "—") .. ENDE) end
   if not snDB().fokusAus then
     local t = {}; for _, x in ipairs(GF.sniperFokus()) do t[#t + 1] = nm(x) end
-    print(GRAU .. "  Fokus: " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) ..
+    for _, x in ipairs(GF.sniperFokus()) do
+      local fg = GF.sniper.fokusGruende and GF.sniper.fokusGruende[x]
+      if fg then print(GRAU .. "  · " .. nm(x) .. ": billigstes " .. (fg.p and GF.geld(fg.p) or "—") .. " – " .. fg.grund .. ENDE) end
+    end
+    print(GRAU .. "  Fokus " .. GF.sniperKatTitel(snDB().fokusKat) .. ": " .. (#t > 0 and table.concat(t, ", ") or "—") .. " · Fokus-Suchen " .. (D2.fokusN or 0) .. " · Fokus-Treffer " .. (D2.fokusTreffer or 0) ..
       ((D2.fokusMsN or 0) > 0 and (" · Ø Antwort " .. math.floor(D2.fokusMsSumme / D2.fokusMsN) .. " ms") or "") .. " · ohne Antwort " .. (D2.fokusOhneAntwort or 0) ..
       " · gebremst " .. (D2.gebremst or 0) .. " · „teurer“ angenommen " .. (D2.teurerOk or 0) .. " · halbiert " .. (D2.halbiert or 0) .. ENDE)
     if snDB().express or (D2.express or 0) > 0 then
@@ -4488,19 +4507,25 @@ function GF.sniperBefehl(rest)
     db.halbieren = not db.halbieren
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Halbieren nach „zu spät“ " .. (db.halbieren and "an" or "aus – stattdessen sofort neue Suche nach dem Rest (Standard)") .. ".")
   elseif cmd == "fokus" then
-    db.fokus = db.fokus or {}
+    -- 2.75: /gf sniper fokus <Kategorie> | alle | [Item] (= nur dieses Item) | wahl (Menue)
     local fid = wert and (tonumber(wert:match("item:(%d+)")) or tonumber(wert))
-    if wert == "alle" then GF.sniperFokusWaehlen(nil); return
+    local kat
+    for _, k in ipairs(GF.SN_KAT) do if k.key == wert then kat = k.key end end
+    if wert == "alle" then GF.sniperKatWaehlen("alle"); return
+    elseif kat then GF.sniperKatWaehlen(kat); return
     elseif wert == "wahl" then if GF.sniperFokusMenue then GF.sniperFokusMenue() end; return
-    elseif wert == "aus" or wert == "an" then db.fokusAus = (wert == "aus") or nil
-      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus-Snipe " .. (db.fokusAus and "aus." or "an."))
-    elseif fid then
-      if db.fokus[fid] then db.fokus[fid] = nil else db.fokus[fid] = true end
-      GF.sniper.fokus = nil
-      print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus " .. (db.fokus[fid] and "+ " or "– ") .. (((C_Item and C_Item.GetItemInfo or GetItemInfo)(fid)) or fid))
-    end
+    elseif fid then GF.sniperFokusWaehlen(fid); return end
+    local ks = {}; for _, k in ipairs(GF.SN_KAT) do ks[#ks + 1] = k.key end
     local t = {}; for _, x in ipairs(GF.sniperFokus(true)) do t[#t + 1] = ((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or tostring(x) end
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus (je ~2 Sek. geprüft): " .. (#t > 0 and table.concat(t, ", ") or "—") .. GRAU .. "  ·  /gf sniper fokus [Item] = dazu/weg · /gf sniper fokus alle · Auswahl: Pfeil neben „Fokus“" .. ENDE)
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Fokus " .. GF.sniperKatTitel(db.fokusKat) .. ": " .. (#t > 0 and table.concat(t, ", ") or "—") .. GRAU .. "  ·  /gf sniper fokus " .. table.concat(ks, "|") .. "|alle · /gf sniper fokus [Item]" .. ENDE)
+  elseif cmd == "sicher" then
+    -- 2.75: Sicherheitsregel anzeigen/aendern: /gf sniper sicher marge 20 · /gf sniper sicher reset
+    db.sicher = db.sicher or {}
+    local k, v = (wert or ""):match("^(%S+)%s*(%S*)$")
+    if k == "reset" then db.sicher = {} print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Sicherheitsregel auf Standard.")
+    elseif k and GF.SN_SICHER[k] and tonumber(v) then db.sicher[k] = tonumber(v); GF.sniper.fokus = nil end
+    local t = {}; for _, key in ipairs({ "marge", "spanne", "trend", "umsatz", "menge", "knaller", "minPreis", "minGewinn", "tage" }) do t[#t + 1] = key .. " " .. snS(key) .. (db.sicher[key] and "*" or "") end
+    print(GOLD .. "Gold Forever Sniper – Sicherheitsregel:" .. ENDE .. " " .. table.concat(t, " · ") .. GRAU .. "  (Kupfer/Prozent; * = geändert; /gf sniper sicher marge 20 · /gf sniper sicher reset)" .. ENDE)
   elseif cmd == "rad" then
     db.rad = not db.rad
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Mausrad " .. (db.rad and "AN – jede Raste zählt wie ein Druck auf " .. db.taste .. " (nur solange ein Treffer angezeigt wird)." or "aus."))
@@ -4511,7 +4536,7 @@ function GF.sniperBefehl(rest)
     local n = {}; for k, x in ipairs(GF.sniperListe(true)) do n[#n + 1] = (((C_Item and C_Item.GetItemInfo or GetItemInfo)(x)) or x) .. (db.eigen[x] and "*" or ""); if k >= 40 then break end end
     print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " Merkliste (" .. #n .. "): " .. table.concat(n, ", "))
   else
-    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " /gf sniper (an/aus) · /gf sniper add [Item] · /gf sniper del [Item] · /gf sniper liste · /gf sniper warum · /gf sniper taste F8 · /gf sniper rad (Mausrad an/aus)")
+    print(GOLD .. "Gold Forever Sniper:" .. ENDE .. " /gf sniper (an/aus) · /gf sniper fokus <Kategorie|alle|Item> · /gf sniper sicher · /gf sniper warum · /gf sniper taste F8 · /gf sniper rad (Mausrad an/aus)")
   end
 end
 

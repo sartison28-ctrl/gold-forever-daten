@@ -4,6 +4,7 @@
 GoldForeverLernen = {stand = "2026-11-23T18:50Z", t = 1795459800, standText = "Mo 23.11.",
 regel = {
   kauf = { minPreis = 100, minStueck = 25, minProzent = 15, minGewinn = 10000, maxStueck = 250, maxBewaehrt = 400, trend = -15 },
+  trend = { m0 = 120, tr3 = 10 }, -- 2.80: Trend-Item automatisch (24 Std. >= 120 % vom 7-Tage-Median und 3-Tage-Trend >= +10 %)
   sniper = { margeFels = 10, felsSpanne = 110, felsUmsatz = 5000, spanneFisch = 125 },
 },
 -- s = bewaehrt | vorsicht (aus allen Geschaeften der Woche)
@@ -30,8 +31,8 @@ plan = {
   items = {
     { id = 7067, g = "Woche", kauf = "Di Mi", verk = "Sa So", kp = 88, vp = 112, max = 400, kaufH = { 18, 22 }, verkH = { 23, 3 } },
     { id = 2592, g = "Woche", kauf = "Di Mi Do", verk = "Fr", kp = 85, vp = 110, max = 250, kaufH = { 23, 3 }, verkH = { 13, 17 } },
-    { id = 2319, g = "Woche", kauf = "Di Mi", verk = "Fr", kp = 85, vp = 110, max = 250, kaufH = { 23, 3 }, verkH = { 12, 16 } },
-    { id = 8839, g = "Woche", kauf = "Di Mi", verk = "Sa So", kp = 90, vp = 110, max = 150, kaufH = { 21, 1 }, verkH = { 14, 18 } },
+    { id = 2319, g = "Woche", trend = "steigt", kauf = "Di Mi", verk = "Fr", kp = 85, vp = 110, max = 250, kaufH = { 23, 3 }, verkH = { 12, 16 } },
+    { id = 8839, g = "Woche", trend = "steigt", kauf = "Di Mi", verk = "Sa So", kp = 90, vp = 110, max = 150, kaufH = { 21, 1 }, verkH = { 14, 18 } },
     { id = 13465, g = "Woche", kauf = "Fr", verk = "Di", kp = 90, vp = 112, max = 150, kaufH = { 14, 18 }, verkH = { 0, 4 } },
     { id = 13463, g = "Woche", kauf = "Fr", verk = "Di", kp = 90, vp = 110, max = 150, kaufH = { 6, 10 }, verkH = { 22, 2 } },
     { id = 264085, g = "Verfügungen", kauf = "immer", verk = "immer", kp = 65, vp = 95, max = 20 },

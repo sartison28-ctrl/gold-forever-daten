@@ -1,15 +1,16 @@
 {
- "letzter_lauf": "2026-11-26T07:24Z",
+ "letzter_lauf": "2026-11-26T08:00Z",
  "ruleset": 1,
  "haeuser": {
   "113": {
    "name": "Auktionshaus der Horde",
-   "zeit": "2026-11-26T07:24Z",
+   "zeit": "2026-11-26T08:00Z",
    "last_modified": "Thu, 26 Nov 2026 07:21:51 GMT",
    "auktionen": 202199,
    "stueck": 2032285,
    "items": 7058,
-   "verkauf_schaetzung": 131567
+   "verkauf_schaetzung": 131567,
+   "hinweis": "unverändert"
   }
  }
 }

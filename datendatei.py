@@ -273,6 +273,17 @@ def haus(ordner):
         "items": items, "raid": kat.get("raid", {}), "events": kat.get("events", []), "rez": [],
         "chars": {}, "bestand": {}, "zeit": zeit, "tag": tagesprofil(reihen), "gruppen": gruppen,
     }
+    # 2.85.1: Wächter-Vorarbeit (verpasst / im Blick / Scan-Auftrag), stündlich ohne Tokens
+    try:
+        import waechter
+        kj = json.load(open(os.path.join(ordner, "kennzahlen.json"), encoding="utf-8")).get("items", {})
+        w = waechter.rechnen(ordner, ids, kj)
+        if w:
+            doc["waechter"] = w
+            with open(os.path.join(ordner, "waechter.json"), "w", encoding="utf-8") as f:
+                json.dump(w, f, ensure_ascii=False, indent=0)
+    except Exception as e:  # Wächter darf die Datendatei nie verhindern
+        print("Wächter-Vorarbeit fehlgeschlagen:", e, flush=True)
     pfad = os.path.join(ordner, "GoldForever_Daten.lua")
     with open(pfad, "w", encoding="utf-8", newline="\n") as f:
         f.write('-- Gold Forever Datendatei (GitHub, automatisch, ersetzt TSM/gf_addon.py) – stand = "%s"\n' % stand.strftime("%Y-%m-%dT%H:%MZ"))

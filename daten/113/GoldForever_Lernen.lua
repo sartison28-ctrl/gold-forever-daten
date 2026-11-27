@@ -3,9 +3,24 @@
 -- Quelle: claude/wochenanalyse-2026-11-23.md + Investment Alex 23.11. (Instabiler Ausloeser). Gilt bis zur naechsten Analyse (Mo 30.11.).
 GoldForeverLernen = {stand = "2026-11-23T18:50Z", t = 1795459800, standText = "Mo 23.11.",
 regel = {
-  kauf = { minPreis = 100, minStueck = 25, minProzent = 15, minGewinn = 10000, maxStueck = 250, maxBewaehrt = 400, trend = -15 },
+  -- 2.81 (Backtest 27.11.): Rabatt-Staffel, Preissturz bei liquiden Items = Kaufchance (Wochenanalyse stellt nach)
+  kauf = { minPreis = 100, minStueck = 25, minProzent = 15, minGewinn = 10000, maxStueck = 250, maxBewaehrt = 400, trend = -15,
+    grenze = 15, tief = 30, tiefUmsatz = 50, sturz = 25, sturzUmsatz = 200, mengeMax = 2, minUmsatz = 20, wenigUmsatz = 50, wenigRabatt = 25 },
+  invest = { basis = 1, trendAnteil = 25, trendKp = 95 }, -- 2.81: Grenzen vom aktuellen Niveau, kleiner Einstieg bei Trend
   trend = { m0 = 120, tr3 = 10 }, -- 2.80: Trend-Item automatisch (24 Std. >= 120 % vom 7-Tage-Median und 3-Tage-Trend >= +10 %)
   sniper = { margeFels = 10, felsSpanne = 110, felsUmsatz = 5000, spanneFisch = 125 },
+},
+-- 2.81: Bericht (Waechter/Analyse) – Addon zeigt ihn einmal im Chat, /gf bericht zeigt alles
+bericht = { t = 1795741675, von = "Analyse", text = "Fr 27.11.",
+  gut = "24g 74s Gewinn seit Mo (Kaufplan 8g, eigene Ware 8g, Sniper 6g)",
+  schlecht = "Investment 0 Käufe (Markt steigt) · Elixier der Weisen fällt (40s, gekauft 43s)",
+  tun = "Im Tageshoch verkaufen: Handfernrohr, Mithrilschrapnellbombe, Instabiler Auslöser · Elixier halten",
+  item = {
+    [5507] = "verkaufen ab 33s (gekauft 20s)",
+    [264088] = "verkaufen ab 88s (gekauft 61s)",
+    [264085] = "verkaufen ab 85s (gekauft 51s)",
+    [13447] = "halten bis Raid 8.–10.12. – nicht unter 43s verkaufen",
+  },
 },
 -- s = bewaehrt | vorsicht (aus allen Geschaeften der Woche)
 item = {

@@ -1088,11 +1088,11 @@
 "segmente": [
 {
 "name": "Fleisch",
-"n": 69,
+"n": 73,
 "index": 110,
 "tr3": 10,
 "verlauf": [
-100,
+99,
 100,
 100,
 100,
@@ -1103,28 +1103,28 @@
 },
 {
 "name": "Elixiere",
-"n": 54,
-"index": 114,
+"n": 66,
+"index": 111,
 "tr3": 10,
 "verlauf": [
 100,
-98,
-102,
+99,
+101,
+101,
 103,
-106,
-112,
-114
+108,
+111
 ]
 },
 {
 "name": "Tränke",
-"n": 52,
+"n": 58,
 "index": 109,
 "tr3": 9,
 "verlauf": [
 100,
-98,
-97,
+100,
+99,
 100,
 100,
 100,
@@ -1177,78 +1177,63 @@
 ]
 },
 {
-"name": "Lederrüstung",
-"n": 6,
-"index": 109,
-"tr3": 5,
-"verlauf": [
-100,
-100,
-100,
-104,
-101,
-103,
-109
-]
-},
-{
 "name": "Verzauberung",
-"n": 31,
-"index": 101,
-"tr3": -5,
-"verlauf": [
-101,
-100,
-100,
-106,
-100,
-100,
-101
-]
-},
-{
-"name": "Schriftrollen",
-"n": 46,
-"index": 110,
-"tr3": 4,
-"verlauf": [
-100,
-99,
-100,
-106,
-100,
-104,
-110
-]
-},
-{
-"name": "Speisen",
-"n": 138,
-"index": 97,
+"n": 38,
+"index": 103,
 "tr3": -3,
 "verlauf": [
-102,
 100,
 100,
 100,
-99,
+106,
 100,
-97
+100,
+103
 ]
 },
 {
 "name": "Stoff",
-"n": 31,
-"index": 105,
-"tr3": 3,
+"n": 38,
+"index": 106,
+"tr3": 2,
 "verlauf": [
 100,
 100,
 101,
+104,
 102,
 101,
+106
+]
+},
+{
+"name": "Fläschchen",
+"n": 3,
+"index": 102,
+"tr3": 2,
+"verlauf": [
 101,
-105
+96,
+100,
+100,
+104,
+102,
+102
+]
+},
+{
+"name": "Edelsteine",
+"n": 18,
+"index": 99,
+"tr3": -1,
+"verlauf": [
+100,
+99,
+101,
+100,
+100,
+101,
+99
 ]
 },
 {
@@ -1267,8 +1252,23 @@
 ]
 },
 {
+"name": "Speisen",
+"n": 152,
+"index": 100,
+"tr3": 0,
+"verlauf": [
+101,
+100,
+100,
+100,
+99,
+100,
+100
+]
+},
+{
 "name": "Leder",
-"n": 65,
+"n": 75,
 "index": 100,
 "tr3": 0,
 "verlauf": [
@@ -1276,14 +1276,14 @@
 99,
 100,
 100,
-101,
+102,
 100,
 100
 ]
 },
 {
 "name": "Ingenieurskunst",
-"n": 55,
+"n": 59,
 "index": 100,
 "tr3": 0,
 "verlauf": [
@@ -1297,18 +1297,18 @@
 ]
 },
 {
-"name": "Edelsteine",
-"n": 17,
-"index": 100,
+"name": "Schriftrollen",
+"n": 56,
+"index": 106,
 "tr3": 0,
 "verlauf": [
 100,
 99,
+100,
+105,
+100,
 102,
-100,
-100,
-101,
-100
+106
 ]
 },
 {
@@ -1325,23 +1325,56 @@
 100,
 100
 ]
+},
+{
+"name": "Lederrüstung",
+"n": 3,
+"index": 100,
+"tr3": 0,
+"verlauf": [
+100,
+100,
+100,
+100,
+100,
+101,
+100
+]
 }
 ],
 "zusammenhang": [
 {
 "von": "Elementar",
 "zu": "Tränke",
-"r": 0.79,
-"rFolge": -0.06,
+"r": 0.84,
+"rFolge": -0.08,
 "tage": 11,
 "stufe": "info",
 "text": "Elementar +8 % in 3 Tagen, Tränke +9 % – laufen meist zusammen"
 },
 {
+"von": "Leder",
+"zu": "Lederrüstung",
+"r": 0.81,
+"rFolge": 0.81,
+"tage": 11,
+"stufe": "info",
+"text": "Leder +0 % in 3 Tagen, Lederrüstung +0 % – laufen meist zusammen"
+},
+{
+"von": "Verzauberung",
+"zu": "Schriftrollen",
+"r": 0.8,
+"rFolge": -0.46,
+"tage": 11,
+"stufe": "info",
+"text": "Verzauberung -3 % in 3 Tagen, Schriftrollen +0 % – laufen meist zusammen"
+},
+{
 "von": "Kräuter",
 "zu": "Elixiere",
-"r": 0.64,
-"rFolge": 0.3,
+"r": 0.74,
+"rFolge": 0.01,
 "tage": 11,
 "stufe": "info",
 "text": "Kräuter +6 % in 3 Tagen, Elixiere +10 % – laufen meist zusammen"
@@ -1356,37 +1389,28 @@
 "text": "Erz +1 % in 3 Tagen, Barren +7 % – laufen meist zusammen"
 },
 {
-"von": "Verzauberung",
-"zu": "Schriftrollen",
-"r": 0.43,
-"rFolge": 0.04,
+"von": "Kräuter",
+"zu": "Fläschchen",
+"r": 0.24,
+"rFolge": -0.22,
 "tage": 11,
 "stufe": "info",
-"text": "Verzauberung -5 % in 3 Tagen, Schriftrollen +4 % – laufen meist zusammen"
+"text": "Kräuter +6 % in 3 Tagen, Fläschchen +2 % – noch kein klarer Zusammenhang"
 },
 {
 "von": "Fleisch",
 "zu": "Speisen",
-"r": 0.38,
-"rFolge": 0.38,
+"r": 0.17,
+"rFolge": 0.08,
 "tage": 11,
 "stufe": "info",
-"text": "Fleisch +10 % in 3 Tagen, Speisen -3 % – noch kein klarer Zusammenhang"
-},
-{
-"von": "Leder",
-"zu": "Lederrüstung",
-"r": 0.13,
-"rFolge": 0.13,
-"tage": 11,
-"stufe": "info",
-"text": "Leder +0 % in 3 Tagen, Lederrüstung +5 % – noch kein klarer Zusammenhang"
+"text": "Fleisch +10 % in 3 Tagen, Speisen +0 % – noch kein klarer Zusammenhang"
 },
 {
 "von": "Kräuter",
 "zu": "Tränke",
-"r": 0.06,
-"rFolge": -0.14,
+"r": 0.13,
+"rFolge": -0.21,
 "tage": 11,
 "stufe": "info",
 "text": "Kräuter +6 % in 3 Tagen, Tränke +9 % – noch kein klarer Zusammenhang"
@@ -1394,16 +1418,16 @@
 {
 "von": "Stoff",
 "zu": "Verbände",
-"r": 0.04,
-"rFolge": -0.72,
+"r": 0.1,
+"rFolge": 0.1,
 "tage": 11,
 "stufe": "info",
-"text": "Stoff +3 % in 3 Tagen, Verbände +0 % – noch kein klarer Zusammenhang"
+"text": "Stoff +2 % in 3 Tagen, Verbände +0 % – noch kein klarer Zusammenhang"
 },
 {
 "von": "Barren",
 "zu": "Ingenieurskunst",
-"r": -0.13,
+"r": -0.22,
 "rFolge": -0.22,
 "tage": 11,
 "stufe": "info",
@@ -1428,6 +1452,7 @@
 "12359": "Barren",
 "12360": "Barren",
 "12361": "Edelsteine",
+"6217": "Verzauberung",
 "118": "Tränke",
 "252022": "Fleisch",
 "252031": "Speisen",
@@ -1455,6 +1480,7 @@
 "14529": "Verbände",
 "14530": "Verbände",
 "4291": "Stoff",
+"6338": "Verzauberung",
 "8392": "Fleisch",
 "4304": "Leder",
 "18641": "Ingenieurskunst",
@@ -1473,6 +1499,7 @@
 "250079": "Speisen",
 "4314": "Stoff",
 "250081": "Speisen",
+"4318": "Stoff",
 "6362": "Fleisch",
 "18662": "Leder",
 "2289": "Schriftrollen",
@@ -1483,8 +1510,9 @@
 "2307": "Lederrüstung",
 "10505": "Ingenieurskunst",
 "10507": "Ingenieurskunst",
+"20746": "Verzauberung",
 "20747": "Verzauberung",
-"2315": "Lederrüstung",
+"2315": "Leder",
 "2316": "Stoff",
 "2318": "Leder",
 "2319": "Leder",
@@ -1538,6 +1566,7 @@
 "250331": "Elixiere",
 "250334": "Elixiere",
 "250335": "Elixiere",
+"250337": "Elixiere",
 "250339": "Elixiere",
 "250340": "Elixiere",
 "250341": "Elixiere",
@@ -1545,7 +1574,9 @@
 "250344": "Elixiere",
 "250345": "Elixiere",
 "250346": "Elixiere",
+"250348": "Elixiere",
 "250349": "Elixiere",
+"250350": "Elixiere",
 "250351": "Elixiere",
 "250353": "Elixiere",
 "250354": "Elixiere",
@@ -1561,6 +1592,7 @@
 "12810": "Leder",
 "4625": "Kräuter",
 "12820": "Elixiere",
+"2580": "Stoff",
 "2581": "Verbände",
 "2584": "Stoff",
 "274971": "Speisen",
@@ -1596,6 +1628,7 @@
 "8839": "Kräuter",
 "8845": "Kräuter",
 "8846": "Kräuter",
+"7050": "Stoff",
 "21151": "Speisen",
 "21153": "Fleisch",
 "4791": "Speisen",
@@ -1638,16 +1671,19 @@
 "11083": "Verzauberung",
 "11084": "Verzauberung",
 "211786": "Schriftrollen",
+"211787": "Schriftrollen",
 "9036": "Tränke",
 "858": "Tränke",
 "252772": "Leder",
 "9061": "Ingenieurskunst",
+"11128": "Verzauberung",
 "252792": "Lederrüstung",
 "11134": "Verzauberung",
 "11135": "Verzauberung",
 "11137": "Verzauberung",
 "11138": "Verzauberung",
 "11139": "Verzauberung",
+"11144": "Verzauberung",
 "211853": "Schriftrollen",
 "211854": "Schriftrollen",
 "211855": "Schriftrollen",
@@ -1708,6 +1744,7 @@
 "15420": "Leder",
 "15422": "Leder",
 "15423": "Leder",
+"250936": "Tränke",
 "250937": "Tränke",
 "250938": "Tränke",
 "250940": "Tränke",
@@ -1720,7 +1757,7 @@
 "3182": "Stoff",
 "7279": "Leder",
 "7282": "Lederrüstung",
-"7285": "Lederrüstung",
+"7285": "Leder",
 "7287": "Leder",
 "13442": "Tränke",
 "13443": "Tränke",
@@ -1732,6 +1769,7 @@
 "13454": "Elixiere",
 "13455": "Tränke",
 "13457": "Tränke",
+"13458": "Tränke",
 "13459": "Tränke",
 "13463": "Kräuter",
 "13464": "Kräuter",
@@ -1744,6 +1782,7 @@
 "4307": "Stoff",
 "1206": "Edelsteine",
 "1210": "Edelsteine",
+"13512": "Fläschchen",
 "277715": "Leder",
 "7392": "Leder",
 "1251": "Verbände",
@@ -1790,6 +1829,7 @@
 "247242": "Tränke",
 "3530": "Verbände",
 "3531": "Verbände",
+"9681": "Speisen",
 "3575": "Barren",
 "3576": "Barren",
 "1529": "Edelsteine",
@@ -1839,6 +1879,7 @@
 "1710": "Tränke",
 "1711": "Schriftrollen",
 "1712": "Schriftrollen",
+"16072": "Fleisch",
 "14047": "Stoff",
 "14048": "Stoff",
 "7909": "Edelsteine",
@@ -1860,7 +1901,8 @@
 "3864": "Edelsteine",
 "7971": "Edelsteine",
 "7972": "Elementar",
-"5957": "Lederrüstung",
+"10047": "Stoff",
+"5957": "Leder",
 "5961": "Lederrüstung",
 "16202": "Verzauberung",
 "16203": "Verzauberung",
@@ -1903,6 +1945,8 @@
 "247754": "Elixiere",
 "247755": "Elixiere",
 "8150": "Leder",
+"8151": "Fläschchen",
+"8152": "Fläschchen",
 "8153": "Kräuter",
 "8154": "Leder",
 "20452": "Speisen",

@@ -42,6 +42,14 @@ jobs:
       - name: Kennzahlen
         run: python kennzahlen.py
 
+      # Stammdaten (Name, Warenklasse) je Item – für Namen und Markt-Segmente des Wächters; Fehler stoppen nie
+      - name: Stammdaten
+        continue-on-error: true
+        env:
+          BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+          BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+        run: python stammdaten.py
+
       # Datendatei fürs Addon (ersetzt TSM/gf_addon.py auf dem PC): Zeitfenster, Tagesprofil, Raid-Katalog, Events
       - name: Datendatei
         run: python datendatei.py

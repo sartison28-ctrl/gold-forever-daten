@@ -236,6 +236,12 @@ def haus(ordner):
     if not os.path.exists(os.path.join(basis, "items.json")):
         return None
     namen = {int(k): v for k, v in json.load(open(os.path.join(basis, "items.json"), encoding="utf-8")).items()}
+    # 2.85.1: fehlende Namen („Item 12345“) aus den Blizzard-Stammdaten (stammdaten.py)
+    sp = os.path.join(basis, "stamm.json")
+    stamm = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {}
+    for k, v in stamm.items():
+        if k.isdigit() and v.get("n") and int(k) in namen and str(namen[int(k)][0]).startswith("Item "):
+            namen[int(k)] = [v["n"]] + list(namen[int(k)][1:])
     kat = json.load(open(os.path.join(basis, "gf_katalog.json"), encoding="utf-8"))
     ids = set(namen) | {int(k) for k in kat.get("raid", {})}
     reihen, jetzt = reihen_laden(ordner, ids)
@@ -277,7 +283,7 @@ def haus(ordner):
     try:
         import waechter
         kj = json.load(open(os.path.join(ordner, "kennzahlen.json"), encoding="utf-8")).get("items", {})
-        w = waechter.rechnen(ordner, ids, kj)
+        w = waechter.rechnen(ordner, ids, kj, {k: v[0] for k, v in namen.items()}, stamm)
         if w:
             doc["waechter"] = w
             with open(os.path.join(ordner, "waechter.json"), "w", encoding="utf-8") as f:

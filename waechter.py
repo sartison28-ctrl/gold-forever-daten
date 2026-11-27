@@ -182,7 +182,9 @@ KRAEUTER = ("friedensblume silberblatt erdwurzel maguskönigskraut wilddornrose 
 EDEL = "jade citrin aquamarin sternrubin tigerauge schattenedelstein moosachat mondstein smaragd saphir diamant azerothischer opal perle".split()
 UNTERKLASSE = {"Kräuter": "Kräuter", "Kraut": "Kräuter", "Leder": "Leder", "Stoff": "Stoff", "Fleisch": "Fleisch", "Elementar": "Elementar",
                "Verzauberkunst": "Verzauberung", "Trank": "Tränke", "Elixier": "Elixiere", "Fläschchen": "Fläschchen",
-               "Essen & Trinken": "Speisen", "Verband": "Verbände", "Schriftrolle": "Schriftrollen", "Edelstein": "Edelsteine"}
+               "Essen & Trinken": "Speisen", "Verband": "Verbände", "Schriftrolle": "Schriftrollen", "Edelstein": "Edelsteine",
+               "Tränke": "Tränke", "Elixiere": "Elixiere", "Verbände": "Verbände", "Kochkunst": "Fleisch", "Teile": "Ingenieurskunst",
+               "Sprengstoff": "Ingenieurskunst", "Gerät": "Ingenieurskunst"}
 # bekannte Ketten Rohstoff -> Produkt (werden mit den Daten geprüft)
 KETTEN = [("Kräuter", "Tränke"), ("Kräuter", "Elixiere"), ("Kräuter", "Fläschchen"), ("Erz", "Barren"), ("Leder", "Lederrüstung"),
           ("Stoff", "Verbände"), ("Stoff", "Stoffrüstung"), ("Fleisch", "Speisen"), ("Barren", "Ingenieurskunst"),

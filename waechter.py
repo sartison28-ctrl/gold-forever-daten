@@ -215,7 +215,7 @@ def segment(iid, name, stamm):
         return "Erz"
     if "leder" in n or "balg" in n:
         return "Leder" if not any(k in n for k in ("weste", "hose", "handschuh", "gürtel", "stiefel", "umhang", "schultern")) else "Lederrüstung"
-    if n.endswith("stoff") or "stoffballen" in n:
+    if (n.endswith("stoff") and "farbstoff" not in n) or "stoffballen" in n:
         return "Stoff"
     if any(k in n for k in EDEL):
         return "Edelsteine"

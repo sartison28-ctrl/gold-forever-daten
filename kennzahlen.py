@@ -91,6 +91,7 @@ def haus_auswerten(ordner):
     tagpreise = {}  # item -> [ [[preis, stück]] je Fenster ] (7 Tage) – für vpmin/sp
     stunden = {}    # item -> [24] (7 Tage)
     serien = {}     # item -> [(zeit, min)] – fuer die Erholungsquote (Addon 2.81.1)
+    bestand = {}    # item -> [Stueck im AH je Stunde, 7 Tage] – fuer „Markt wird geflutet“ (Addon 2.82.1)
     stueck = {}
     for z in zeilen:
         t = zeitpunkt(z["zeit_utc"])
@@ -102,6 +103,9 @@ def haus_auswerten(ordner):
         if mn is not None:
             mins.setdefault(item, [[] for _ in range(FENSTER)])[k].append(mn)
             serien.setdefault(item, []).append((t, mn))
+        sk = zahl(z.get("stueck"))
+        if sk is not None and k < 7:
+            bestand.setdefault(item, []).append(sk)
         # Verkäufe erst ab dem Filter „zurückgezogen“ (17.11.2026) zählen – ältere Schätzungen sind viel zu hoch
         vs = zahl(z.get("verkauf_schaetzung")) if z.get("zurueckgezogen") not in (None, "") else None
         if vs is not None:
@@ -173,6 +177,8 @@ def haus_auswerten(ordner):
                 dip -= 1  # laufendes Tief: Ausgang noch offen
             if dip > 0:
                 e["dip"], e["erh"] = dip, erh
+        if item in bestand and len(bestand[item]) >= 24:
+            e["sta"] = median(bestand[item])  # typischer Bestand im AH (7 Tage)
         items[item] = {k2: w for k2, w in e.items() if w is not None and not k2.startswith("_")}
     return {"stand": neueste, "fenster_std": 24, "stunden": std, "items": items}
 
@@ -181,6 +187,7 @@ def realm_lua(erg, pfad):
     """Kompakte Realm-Datei fürs Addon (GoldForever_Realm.lua, ab 2.52).
 
     GoldForeverRealm = {stand = "...", t = <Unixzeit>, i = {[id] = {m, n, m0, tr3, fall, vt, vp, st, vpmin, sp, dip, erh}}}
+      sta = typischer Bestand im AH (Median der Stunden, 7 Tage) – Addon 2.82.1 Flut-Bremse
       dip, erh = Preistiefs (<= 85 %) der letzten 14 Tage / davon in 12 Std. wieder >= 95 % (Addon 2.81.1, Erholungsquote)
       m    Median der Tagesmediane (bis 7 Tage) = „üblicher“ Realm-Preis
       n    Anzahl Tage mit Median
@@ -197,10 +204,10 @@ def realm_lua(erg, pfad):
             continue
         werte = [median(ms) or 0, len(ms), (e.get("m") or [None])[0] or 0, e.get("tr3") or 0, e.get("fall") or 0,
                  e.get("vt") or 0, e.get("vp") or 0, e.get("st") or 0, e.get("vpmin") or 0, e.get("sp") or 0,
-                 e.get("dip") or 0, e.get("erh") or 0]
+                 e.get("dip") or 0, e.get("erh") or 0, e.get("sta") or 0]
         zeilen.append("[%s]={%s}," % (item, ",".join(str(int(round(w))) if isinstance(w, (int, float)) else "0" for w in werte)))
     with open(pfad, "w", encoding="utf-8") as f:
-        f.write("-- Gold Forever Realm-Daten (GitHub, automatisch) – Felder: m, n, m0, tr3, fall, vt, vp, st, vpmin, sp, dip, erh\n")
+        f.write("-- Gold Forever Realm-Daten (GitHub, automatisch) – Felder: m, n, m0, tr3, fall, vt, vp, st, vpmin, sp, dip, erh, sta\n")
         f.write('GoldForeverRealm = {stand = "%s", t = %d, i = {\n' % (stand, t))
         f.write("\n".join(zeilen))
         f.write("\n}}\n")

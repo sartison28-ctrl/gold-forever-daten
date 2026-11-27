@@ -1,5 +1,5 @@
 {
- "stand": "2026-11-27T18:24Z",
+ "stand": "2026-11-27T19:02Z",
  "namespace": "dynamic-forever-eu",
  "rulesets": [
   {
@@ -20,18 +20,7 @@
   }
  ],
  "ruleset_gewaehlt": 1,
- "haeuser": [
-  {
-   "id": 113,
-   "name": "Auktionshaus der Horde",
-   "key": {
-    "href": "https://eu.api.blizzard.com/data/wow/ruleset/1/auctions/113?namespace=dynamic-forever-eu"
-   },
-   "auktionen": 344854,
-   "items": 7196,
-   "stueck": 3029483
-  }
- ],
+ "haeuser": [],
  "alle_haeuser": [
   {
    "id": 110,

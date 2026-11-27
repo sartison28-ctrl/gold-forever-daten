@@ -6,7 +6,8 @@ regel = {
   -- 2.81 (Backtest 27.11.): Rabatt-Staffel, Preissturz bei liquiden Items = Kaufchance (Wochenanalyse stellt nach)
   kauf = { minPreis = 100, minStueck = 25, minProzent = 15, minGewinn = 10000, maxStueck = 250, maxBewaehrt = 400, trend = -15,
     grenze = 15, tief = 30, tiefUmsatz = 50, sturz = 25, sturzUmsatz = 200, mengeMax = 2, minUmsatz = 20, wenigUmsatz = 50, wenigRabatt = 25 },
-  invest = { basis = 1, trendAnteil = 25, trendKp = 95 }, -- 2.81: Grenzen vom aktuellen Niveau, kleiner Einstieg bei Trend
+  invest = { basis = 1, trendAnteil = 25, trendKp = 95 },
+  verkauf = { ladenStd = 12, ladenEinst = 3, frist = 24, verlustMax = 10 }, -- 2.84: Ladenhueter-Regel (Analyse Verkaufen 27.11., OK Alex) -- 2.81: Grenzen vom aktuellen Niveau, kleiner Einstieg bei Trend
   trend = { m0 = 120, tr3 = 10 }, -- 2.80: Trend-Item automatisch (24 Std. >= 120 % vom 7-Tage-Median und 3-Tage-Trend >= +10 %)
   sniper = { margeFels = 10, felsSpanne = 110, felsUmsatz = 5000, spanneFisch = 125 },
 },

@@ -85,6 +85,7 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
     regeln_laden(ordner)
     namen, stamm = namen or {}, stamm or {}
     # ganzer Markt (für Segmente): alle Items mit genug Umsatz
+    ids0 = set(ids)
     ids = set(ids) | {int(k) for k, v in kenn.items() if k.isdigit() and (v.get("vt") or 0) >= MIN_UMSATZ}
     reihen, jetzt = laden(ordner, ids)
     if not jetzt:
@@ -158,12 +159,18 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
                     auftrag.append({"id": iid, "text": "oft billig um %d Uhr (%d von 7 Tagen)" % (h, len(tg)), "wann": "%d Uhr" % h,
                                     "h": h, "wert": int(R * (1 - KAUF_TIEF) * menge)})
     seg, zus = segmente(reihen, jetzt, kenn, namen, stamm)
+    # Segment je Item (nur Items der Datendatei) – damit Tooltip/Wächter im Spiel den Markt des Items kennen
+    itemseg = {}
+    for iid in ids0:
+        sg = segment(iid, namen.get(iid), stamm)
+        if sg and any(x["name"] == sg for x in seg):
+            itemseg[iid] = sg
     verpasst.sort(key=lambda x: -x["gewinn"])
     blick.sort(key=lambda x: -x["wert"])
     auftrag.sort(key=lambda x: -x["wert"])
     # Verkaufs-Hochs: mehr behalten – das Addon filtert auf die eigene Ware
     vk = [x for x in verpasst if x["art"] == "kauf"][:25] + [x for x in verpasst if x["art"] == "verk"][:80]
-    return {"stand": jetzt, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "blick": blick[:25], "auftrag": auftrag[:10],
+    return {"stand": jetzt, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "itemseg": itemseg, "blick": blick[:25], "auftrag": auftrag[:10],
             "regel": {"kaufTief": KAUF_TIEF, "verkHoch": VERK_HOCH, "minUmsatz": MIN_UMSATZ, "flut": FLUT}}
 
 

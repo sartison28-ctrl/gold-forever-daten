@@ -2,6 +2,7 @@
 -- kaufH/verkH = billigstes/teuerstes 4-Std.-Fenster je Item (GitHub-Stundendaten 15.–23.11., p10 je Stunde relativ zum Tagesmedian, Ortszeit).
 -- Quelle: claude/wochenanalyse-2026-11-23.md + Investment Alex 23.11. (Instabiler Ausloeser). Gilt bis zur naechsten Analyse (Mo 30.11.).
 GoldForeverLernen = {stand = "2026-11-23T18:50Z", t = 1795459800, standText = "Mo 23.11.",
+waechter = { t = 1795794731, text = "27.11. 16:52" },
 regel = {
   -- 2.81 (Backtest 27.11.): Rabatt-Staffel, Preissturz bei liquiden Items = Kaufchance (Wochenanalyse stellt nach)
   kauf = { minPreis = 100, minStueck = 25, minProzent = 15, minGewinn = 10000, maxStueck = 250, maxBewaehrt = 400, trend = -15,
@@ -12,15 +13,19 @@ regel = {
   sniper = { margeFels = 10, felsSpanne = 110, felsUmsatz = 5000, spanneFisch = 125 },
 },
 -- 2.81: Bericht (Waechter/Analyse) – Addon zeigt ihn einmal im Chat, /gf bericht zeigt alles
-bericht = { t = 1795741675, von = "Analyse", text = "Fr 27.11.",
-  gut = "24g 74s Gewinn seit Mo (Kaufplan 8g, eigene Ware 8g, Sniper 6g)",
-  schlecht = "Investment 0 Käufe (Markt steigt) · Elixier der Weisen fällt (40s, gekauft 43s)",
-  tun = "Im Tageshoch verkaufen: Handfernrohr, Mithrilschrapnellbombe, Instabiler Auslöser · Elixier halten",
+bericht = { t = 1795794731, von = "Wächter", text = "Fr 27.11.",
+  gut = "6g 18s Gewinn in 24 Std. (Skorpidschuppe +3g 87s, Eberlunge +2g 45s)",
+  schlecht = "Elixier der Weisen -1g 91s (Preis eingebrochen) · Bleichhauer-Ziel 5s 13c zu hoch",
+  tun = "Bleichhauer für 3s 99c und Schrapnellbombe für 80s 29c einstellen · Magiestoff, Fleisch, Item 277499 am Ziel verkaufen",
   item = {
-    [5507] = "verkaufen ab 33s (gekauft 20s)",
-    [264088] = "verkaufen ab 88s (gekauft 61s)",
-    [264085] = "verkaufen ab 85s (gekauft 51s)",
-    [13447] = "halten bis Raid 8.–10.12. – nicht unter 43s verkaufen",
+    [274976] = "Ziel zu hoch – verkaufen für 3s 99c (Gewinn ca. 58s für 74 Stk.)",
+    [264088] = "Ladenhüter seit 66 Std. – für 80s 29c einstellen (gekauft 60s 90c)",
+    [4245] = "Ladenhüter seit 14 Std. – für 20s 64c einstellen (gekauft 21s, kleiner Verlust)",
+    [4338] = "am Ziel – verkaufen ab 3s 99c (steht zu 4s 8c)",
+    [277499] = "am Ziel – verkaufen ab 6s 83c (gekauft 4s 45c)",
+    [249695] = "am Ziel – verkaufen ab 13s 98c (gekauft 10s 78c)",
+    [13447] = "Vorsicht: Preis eingebrochen (39s 90c) – nicht nachkaufen",
+    [8392] = "Preis fällt (52s 30c, Trend -30 %) – kein Nachkauf",
   },
 },
 -- s = bewaehrt | vorsicht (aus allen Geschaeften der Woche)
@@ -41,6 +46,12 @@ item = {
   [249274] = { s = "vorsicht" }, -- Wuergerebe (faellt die ganze Woche)
   [6358] = { s = "vorsicht" },   -- Oeliges Schwarzmaul (faellt)
   [14047] = { s = "vorsicht" },  -- Runenstoff (faellt)
+  [1015] = { s = "vorsicht", g = "Wächter 27.11.: geflutet (2,2x üblich), Preis fällt" }, -- Magere Wolfflanke
+  [5631] = { s = "vorsicht", g = "Wächter 27.11.: 2 Verluste in Folge" }, -- Wuttrank
+  [13447] = { s = "vorsicht", g = "Wächter 27.11.: Einbruch (79 % vom 7-Tage-Median, Trend -21 %)" }, -- Elixier der Weisen
+  [13930] = { s = "vorsicht", g = "Wächter 27.11.: geflutet (2,1x üblich), Preis fällt" }, -- Rotkiemenfilet
+  [213546] = { s = "vorsicht", g = "Wächter 27.11.: geflutet (2,2x üblich), Preis fällt" }, -- Schriftrolle: SCHUBIDU
+  [248686] = { s = "vorsicht", g = "Wächter 27.11.: 2 Verluste in Folge" }, -- Abgefangene Kiste: Kräuter des Gesellen
 },
 plan = {
   stand = "Analyse Mo 23.11.", kaufH = { 19, 1 }, verkH = { 10, 14 },

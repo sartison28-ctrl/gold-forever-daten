@@ -132,11 +132,11 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
         elif p <= R * KAUF_TIEF:
             art, txt = "tief", "%d %% unter üblich – Kaufchance" % round((1 - p / R) * 100)
         elif q <= sta * LEER and p >= R:
-            art, txt = "leer", "fast leergekauft (%d statt %d) – Preis kann steigen" % (q, sta)
+            art, txt = "leer", "fast leergekauft (%d statt %d) – Preisspitze: verkaufen, nicht kaufen" % (q, sta)
         elif tr6 <= -15:
             art, txt = "faellt", "fällt seit 6 Std. (%d %%)" % round(tr6)
         elif tr6 >= 15:
-            art, txt = "steigt", "steigt seit 6 Std. (+%d %%)" % round(tr6)
+            art, txt = "steigt", "Preisspitze (+%d %% in 6 Std.) – verkaufen, nicht nachkaufen" % round(tr6)
         if art:
             wert = int(abs(R - p) * menge)
             if wert >= MIN_GEWINN or art in ("flut", "leer"):
@@ -158,7 +158,7 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
                 if len(tg) >= 3:
                     auftrag.append({"id": iid, "text": "oft billig um %d Uhr (%d von 7 Tagen)" % (h, len(tg)), "wann": "%d Uhr" % h,
                                     "h": h, "wert": int(R * (1 - KAUF_TIEF) * menge)})
-    seg, zus = segmente(reihen, jetzt, kenn, namen, stamm)
+    seg, zus, idx = segmente(reihen, jetzt, kenn, namen, stamm)
     # Segment je Item (nur Items der Datendatei) – damit Tooltip/Wächter im Spiel den Markt des Items kennen
     itemseg = {}
     for iid in ids0:
@@ -170,7 +170,8 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
     auftrag.sort(key=lambda x: -x["wert"])
     # Verkaufs-Hochs: mehr behalten – das Addon filtert auf die eigene Ware
     vk = [x for x in verpasst if x["art"] == "kauf"][:25] + [x for x in verpasst if x["art"] == "verk"][:80]
-    return {"stand": jetzt, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "itemseg": itemseg, "blick": blick[:25], "auftrag": auftrag[:10],
+    sig = signale_pruefen(ordner, reihen, jetzt, blick, zus, idx)
+    return {"stand": jetzt, "signale": sig, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "itemseg": itemseg, "blick": blick[:25], "auftrag": auftrag[:10],
             "regel": {"kaufTief": KAUF_TIEF, "verkHoch": VERK_HOCH, "minUmsatz": MIN_UMSATZ, "flut": FLUT}}
 
 
@@ -319,4 +320,84 @@ def segmente(reihen, jetzt, kenn, namen, stamm):
         zus.append({"von": a, "zu": b, "r": round(r, 2), "rFolge": round(r_folge, 2) if r_folge is not None else None,
                     "tage": len(paare), "stufe": stufe, "text": text})
     zus.sort(key=lambda x: (x["stufe"] == "info", -x["r"]))
-    return seg, zus
+    return seg, zus, idx
+
+
+# ---------------------------------------------------------------- Signale prüfen sich selbst (Wunsch Alex 27.11. 22:13)
+# Jedes Signal (blick: tief/steigt/leer/faellt/flut, Kette „chance“) wird gemerkt und 24–48 Std. später gegen die echten
+# Preise geprüft. Ergebnis: Trefferquote je Signal-Art (14 Tage) – Grundlage für „Lockern auf Probe“.
+SIGNAL_TAGE = 14
+
+
+def _nach(pkt, t, von_h, bis_h):
+    return [x for x in pkt if t + von_h * 3600 <= x[0] <= t + bis_h * 3600]
+
+
+def signale_pruefen(ordner, reihen, jetzt, blick, zus, idx):
+    pfad = os.path.join(ordner, "signale.json")
+    try:
+        log = json.load(open(pfad, encoding="utf-8"))
+    except Exception:
+        log = []
+    zuletzt = {}
+    for e in log:
+        zuletzt[(e[1], e[2])] = max(zuletzt.get((e[1], e[2]), 0), e[0])
+    def merken(iid, art, p, R):
+        if jetzt - zuletzt.get((iid, art), 0) >= 12 * 3600:
+            log.append([jetzt, iid, art, p, R, None])
+            zuletzt[(iid, art)] = jetzt
+    for b in blick[:60]:   # die 60 wichtigsten je Lauf (nach möglichem Gewinn), sonst wird die Datei zu groß
+        merken(b["id"], b["art"], b["p"], b["R"])
+    heute = _tag(jetzt)
+    for z in zus:
+        if z["stufe"] == "chance" and z["zu"] in idx and heute in idx[z["zu"]]:
+            merken("kette:" + z["von"] + ">" + z["zu"], "kette", round(idx[z["zu"]][heute], 1), 0)
+    # prüfen: Signale, die 48 Std. alt sind (Ketten: 2 Tage), Ergebnis e[5] = [treffer 0/1, änderung %]
+    for e in log:
+        if e[5] is not None or jetzt - e[0] < 48 * 3600:
+            continue
+        t, iid, art, p = e[0], e[1], e[2], e[3]
+        if art == "kette":
+            zu = iid.split(">")[1]
+            s2 = idx.get(zu, {})
+            spaeter = [v for d, v in s2.items() if _tag(t + 86400) <= d <= _tag(t + 2 * 86400)]
+            if spaeter and p:
+                ae = max(spaeter) / p - 1
+                e[5] = [1 if ae >= 0.03 else 0, round(ae * 100, 1)]
+            continue
+        pkt = reihen.get(iid)
+        if not pkt or not p:
+            e[5] = [0, 0]
+            continue
+        spaet = _nach(pkt, t, 1, 48)
+        if not spaet:
+            continue
+        hoch = max(x[1] for x in spaet)
+        p24 = [x[1] for x in _nach(pkt, t, 20, 28)]
+        p24 = median(p24) if p24 else spaet[-1][1]
+        if art == "tief":      # Kauf hätte sich gelohnt: typischer Preis 12–48 Std. danach bringt >= 5 % nach Gebühr
+            spaeter = [x[1] for x in _nach(pkt, t, 12, 48)]
+            ae = (median(spaeter) if spaeter else hoch) * 0.95 / p - 1
+            e[5] = [1 if ae >= 0.05 else 0, round(ae * 100, 1)]
+        elif art in ("steigt", "leer"):
+            ae = p24 / p - 1
+            e[5] = [1 if ae >= 0.05 else 0, round(ae * 100, 1)]
+        else:                  # faellt / flut: Warnung richtig, wenn der Preis nicht wieder steigt
+            ae = p24 / p - 1
+            e[5] = [1 if ae <= 0.02 else 0, round(ae * 100, 1)]
+    ab = jetzt - SIGNAL_TAGE * 86400
+    log = [e for e in log if e[0] >= ab]
+    with open(pfad, "w", encoding="utf-8") as f:
+        json.dump(log, f, separators=(",", ":"))
+    erg = defaultdict(lambda: {"n": 0, "treffer": 0, "werte": []})
+    for e in log:
+        if e[5] is None:
+            continue
+        g = erg[e[2]]
+        g["n"] += 1; g["treffer"] += e[5][0]; g["werte"].append(e[5][1])
+    out = {}
+    for art, g in erg.items():
+        out[art] = {"n": g["n"], "treffer": g["treffer"], "quote": round(g["treffer"] / g["n"] * 100) if g["n"] else None,
+                    "aenderung": round(median(g["werte"]), 1) if g["werte"] else None}
+    out["offen"] = sum(1 for e in log if e[5] is None)
+    return out

@@ -28,7 +28,9 @@ def main():
         fehlt = set(meta.get("fehlt", []))
         kpf = os.path.join(ordner, "kennzahlen.json")
         kenn = json.load(open(kpf, encoding="utf-8")).get("items", {}) if os.path.exists(kpf) else {}
-        offen = [i for i in sorted(kenn, key=lambda k: -(kenn[k].get("vt") or 0)) if i not in stamm and i not in fehlt][:MAX]
+        reihe = sorted(kenn, key=lambda k: -(kenn[k].get("vt") or 0))
+        # neue Items zuerst, dann ältere Einträge ohne Händlerpreis (Feld „vk“ kam später dazu)
+        offen = ([i for i in reihe if i not in stamm and i not in fehlt] + [i for i in reihe if i in stamm and "vk" not in stamm[i]])[:MAX]
         if not offen:
             continue
         ns = meta.get("ns")
@@ -58,7 +60,9 @@ def main():
                 continue
             stamm[i] = {"n": S.name_text(d.get("name")),
                         "k": S.name_text((d.get("item_class") or {}).get("name")), "kid": (d.get("item_class") or {}).get("id"),
-                        "u": S.name_text((d.get("item_subclass") or {}).get("name")), "uid": (d.get("item_subclass") or {}).get("id")}
+                        "u": S.name_text((d.get("item_subclass") or {}).get("name")), "uid": (d.get("item_subclass") or {}).get("id"),
+                        # Händlerpreise: was der Händler zahlt (vk) / verlangt (hk) – sichere Untergrenze bzw. Händlerware
+                        "vk": d.get("sell_price"), "hk": d.get("purchase_price")}
             neu += 1
         meta["fehlt"] = sorted(fehlt)
         stamm["_meta"] = meta

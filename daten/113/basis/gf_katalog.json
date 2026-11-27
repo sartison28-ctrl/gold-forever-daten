@@ -1,0 +1,782 @@
+{
+"raid": {
+"13446": [
+"dauer",
+"Trank",
+"alle",
+"Notfall-Heilung – jede Woche"
+],
+"13444": [
+"dauer",
+"Trank",
+"Heiler/Caster",
+"Mana-Notfall"
+],
+"13452": [
+"dauer",
+"Elixier",
+"Nahkampf",
+"Standard für Schurken, Jäger, Krieger"
+],
+"9206": [
+"dauer",
+"Elixier",
+"Nahkampf",
+"Stärke"
+],
+"13454": [
+"dauer",
+"Elixier",
+"Caster",
+"Zauberschaden"
+],
+"9264": [
+"dauer",
+"Elixier",
+"Hexer/Schattenpriester",
+"Schattenschaden"
+],
+"20007": [
+"dauer",
+"Trank",
+"Heiler",
+"Mana-Regeneration"
+],
+"13445": [
+"dauer",
+"Elixier",
+"Tank",
+"Rüstung"
+],
+"3825": [
+"dauer",
+"Elixier",
+"Tank",
+"Leben"
+],
+"20004": [
+"dauer",
+"Trank",
+"Tank/Nahkampf",
+"Regeneration"
+],
+"13510": [
+"dauer",
+"Fläschchen",
+"Tank",
+"teuer, Top-Gilden jede Woche"
+],
+"13511": [
+"dauer",
+"Fläschchen",
+"Heiler",
+"Mana"
+],
+"13512": [
+"dauer",
+"Fläschchen",
+"Caster",
+"Zauberschaden"
+],
+"12404": [
+"dauer",
+"Waffe",
+"Nahkampf",
+"Wetzstein"
+],
+"12643": [
+"dauer",
+"Waffe",
+"Nahkampf",
+"Gewichtsstein"
+],
+"18262": [
+"dauer",
+"Waffe",
+"Nahkampf",
+"Elementarwetzstein"
+],
+"20749": [
+"dauer",
+"Waffe",
+"Caster",
+"Zauberöl"
+],
+"20748": [
+"dauer",
+"Waffe",
+"Heiler",
+"Manaöl"
+],
+"13928": [
+"dauer",
+"Essen",
+"Nahkampf",
+"Beweglichkeit"
+],
+"13931": [
+"dauer",
+"Essen",
+"Heiler/Caster",
+"Mana-Regeneration"
+],
+"18045": [
+"dauer",
+"Essen",
+"alle",
+"Ausdauer/Willenskraft"
+],
+"20452": [
+"dauer",
+"Essen",
+"Nahkampf",
+"Stärke"
+],
+"12820": [
+"dauer",
+"Trank",
+"Nahkampf",
+"Angriffskraft"
+],
+"14530": [
+"dauer",
+"Verband",
+"alle",
+"Heilung zwischendurch"
+],
+"20520": [
+"dauer",
+"Rune",
+"Heiler/Caster",
+"Mana"
+],
+"12662": [
+"dauer",
+"Rune",
+"Heiler/Caster",
+"Mana"
+],
+"13442": [
+"dauer",
+"Trank",
+"Krieger",
+"Wut"
+],
+"13457": [
+"boss",
+"Schutz",
+"alle",
+"Onyxia & Feuer-Bosse"
+],
+"13459": [
+"boss",
+"Schutz",
+"alle",
+"Schattenschaden-Bosse"
+],
+"13458": [
+"boss",
+"Schutz",
+"alle",
+"Naturschaden-Bosse"
+],
+"13456": [
+"boss",
+"Schutz",
+"alle",
+"Frostschaden-Bosse"
+],
+"13461": [
+"boss",
+"Schutz",
+"alle",
+"Arkanschaden-Bosse"
+],
+"5634": [
+"boss",
+"Trank",
+"alle",
+"gegen Verlangsamung/Festhalten"
+],
+"3387": [
+"boss",
+"Trank",
+"Nahkampf",
+"Schutz vor körperl. Schaden"
+],
+"9030": [
+"boss",
+"Trank",
+"alle",
+"entfernt Flüche, Gifte, Krankheiten"
+],
+"13455": [
+"boss",
+"Trank",
+"Tank",
+"Rüstung beim Boss-Pull"
+],
+"9036": [
+"boss",
+"Trank",
+"alle",
+"Magiewiderstand"
+],
+"15993": [
+"boss",
+"Sprengstoff",
+"Ingenieure",
+"Betäubung"
+],
+"18641": [
+"boss",
+"Sprengstoff",
+"Ingenieure",
+"Flächenschaden"
+],
+"10646": [
+"boss",
+"Sprengstoff",
+"Ingenieure",
+"Burst-Schaden"
+],
+"13468": [
+"mat",
+"Kraut",
+"Alchimie",
+"für alle Fläschchen – immer knapp"
+],
+"13422": [
+"mat",
+"Fisch",
+"Alchimie",
+"für Steinschuppenöl"
+],
+"13423": [
+"mat",
+"Öl",
+"Alchimie",
+"für Titanen-Fläschchen & Tank-Tränke"
+],
+"13463": [
+"mat",
+"Kraut",
+"Alchimie",
+"Mana-/Schutztränke, Fläschchen"
+],
+"13465": [
+"mat",
+"Kraut",
+"Alchimie",
+"Heiltränke, Fläschchen"
+],
+"13466": [
+"mat",
+"Kraut",
+"Alchimie",
+"Stufe-60-Elixiere"
+],
+"13467": [
+"mat",
+"Kraut",
+"Alchimie",
+"Manatrank, Fläschchen"
+],
+"13464": [
+"mat",
+"Kraut",
+"Alchimie",
+"Erheblicher Heiltrank"
+],
+"8846": [
+"mat",
+"Kraut",
+"Alchimie",
+"Titanen-Fläschchen, Schattenmacht"
+],
+"8845": [
+"mat",
+"Kraut",
+"Alchimie",
+"Elixiere"
+],
+"8838": [
+"mat",
+"Kraut",
+"Alchimie",
+"Elixiere"
+],
+"8836": [
+"mat",
+"Kraut",
+"Alchimie",
+"Elixiere"
+],
+"8831": [
+"mat",
+"Kraut",
+"Alchimie",
+"Elixiere"
+],
+"7068": [
+"mat",
+"Element",
+"Alchimie",
+"Großer Feuerschutztrank"
+],
+"7078": [
+"mat",
+"Element",
+"Handwerk",
+"Feuer-Rezepte"
+],
+"7076": [
+"mat",
+"Element",
+"Handwerk",
+"Steinschild"
+],
+"7080": [
+"mat",
+"Element",
+"Handwerk",
+"Frost-/Wasser-Rezepte"
+],
+"12808": [
+"mat",
+"Element",
+"Handwerk",
+"Schatten-Rezepte"
+],
+"12803": [
+"mat",
+"Element",
+"Handwerk",
+"Natur-Rezepte"
+],
+"8925": [
+"mat",
+"Phiole",
+"Alchimie",
+"für fast alle Stufe-60-Tränke"
+],
+"18256": [
+"mat",
+"Phiole",
+"Alchimie",
+"für Fläschchen"
+],
+"13759": [
+"mat",
+"Fisch",
+"Kochkunst",
+"für Nachtflossensuppe"
+],
+"13755": [
+"mat",
+"Fisch",
+"Kochkunst",
+"für Gegrillter Kalmar"
+],
+"12365": [
+"mat",
+"Stein",
+"Schmiedekunst",
+"für Wetz-/Gewichtsstein"
+],
+"12359": [
+"mat",
+"Barren",
+"Ingenieur/Schmied",
+"Granaten, Elementarwetzstein"
+],
+"14047": [
+"mat",
+"Stoff",
+"Erste Hilfe",
+"für Runenstoffverband"
+],
+"12811": [
+"mat",
+"Kugel",
+"Handwerk",
+"teure Rezepte"
+],
+"250339": [
+"neu",
+"",
+"",
+""
+],
+"250340": [
+"neu",
+"",
+"",
+""
+],
+"250341": [
+"neu",
+"",
+"",
+""
+],
+"250342": [
+"neu",
+"",
+"",
+""
+],
+"250343": [
+"neu",
+"",
+"",
+""
+],
+"250344": [
+"neu",
+"",
+"",
+""
+],
+"250345": [
+"neu",
+"",
+"",
+""
+],
+"250346": [
+"neu",
+"",
+"",
+""
+],
+"250347": [
+"neu",
+"",
+"",
+""
+],
+"250348": [
+"neu",
+"",
+"",
+""
+],
+"250349": [
+"neu",
+"",
+"",
+""
+],
+"250350": [
+"neu",
+"",
+"",
+""
+],
+"250351": [
+"neu",
+"",
+"",
+""
+],
+"250353": [
+"neu",
+"",
+"",
+""
+],
+"250354": [
+"neu",
+"",
+"",
+""
+],
+"250358": [
+"neu",
+"",
+"",
+""
+],
+"250337": [
+"neu",
+"",
+"",
+""
+],
+"250336": [
+"neu",
+"",
+"",
+""
+],
+"250335": [
+"neu",
+"",
+"",
+""
+],
+"250334": [
+"neu",
+"",
+"",
+""
+],
+"250934": [
+"neu",
+"",
+"",
+""
+],
+"250935": [
+"neu",
+"",
+"",
+""
+],
+"250936": [
+"neu",
+"",
+"",
+""
+],
+"250937": [
+"neu",
+"",
+"",
+""
+],
+"250938": [
+"neu",
+"",
+"",
+""
+],
+"250940": [
+"neu",
+"",
+"",
+""
+],
+"250944": [
+"neu",
+"",
+"",
+""
+],
+"250946": [
+"neu",
+"",
+"",
+""
+],
+"250947": [
+"neu",
+"",
+"",
+""
+],
+"250948": [
+"neu",
+"",
+"",
+""
+]
+},
+"events": [
+[
+"Erste Raids öffnen",
+"2026-12-09",
+"2026-12-09",
+"raid",
+[]
+],
+[
+"Dunkelmond-Jahrmarkt",
+"2026-11-09",
+"2026-11-16",
+"dmf",
+[
+"5134",
+"11407",
+"4582",
+"5117",
+"11404",
+"19933",
+"3240",
+"3486",
+"3835",
+"7945",
+"12644",
+"4363",
+"4375",
+"9313",
+"11590",
+"15994",
+"2309",
+"2314",
+"5739",
+"8185",
+"15564"
+]
+],
+[
+"Dunkelmond-Jahrmarkt",
+"2026-12-07",
+"2026-12-14",
+"dmf",
+[
+"5134",
+"11407",
+"4582",
+"5117",
+"11404",
+"19933",
+"3240",
+"3486",
+"3835",
+"7945",
+"12644",
+"4363",
+"4375",
+"9313",
+"11590",
+"15994",
+"2309",
+"2314",
+"5739",
+"8185",
+"15564"
+]
+],
+[
+"Dunkelmond-Jahrmarkt",
+"2027-01-04",
+"2027-01-11",
+"dmf",
+[
+"5134",
+"11407",
+"4582",
+"5117",
+"11404",
+"19933",
+"3240",
+"3486",
+"3835",
+"7945",
+"12644",
+"4363",
+"4375",
+"9313",
+"11590",
+"15994",
+"2309",
+"2314",
+"5739",
+"8185",
+"15564"
+]
+],
+[
+"Dunkelmond-Jahrmarkt",
+"2027-02-08",
+"2027-02-15",
+"dmf",
+[
+"5134",
+"11407",
+"4582",
+"5117",
+"11404",
+"19933",
+"3240",
+"3486",
+"3835",
+"7945",
+"12644",
+"4363",
+"4375",
+"9313",
+"11590",
+"15994",
+"2309",
+"2314",
+"5739",
+"8185",
+"15564"
+]
+],
+[
+"Dunkelmond-Jahrmarkt",
+"2027-03-08",
+"2027-03-15",
+"dmf",
+[
+"5134",
+"11407",
+"4582",
+"5117",
+"11404",
+"19933",
+"3240",
+"3486",
+"3835",
+"7945",
+"12644",
+"4363",
+"4375",
+"9313",
+"11590",
+"15994",
+"2309",
+"2314",
+"5739",
+"8185",
+"15564"
+]
+],
+[
+"Dunkelmond-Jahrmarkt",
+"2027-04-05",
+"2027-04-12",
+"dmf",
+[
+"5134",
+"11407",
+"4582",
+"5117",
+"11404",
+"19933",
+"3240",
+"3486",
+"3835",
+"7945",
+"12644",
+"4363",
+"4375",
+"9313",
+"11590",
+"15994",
+"2309",
+"2314",
+"5739",
+"8185",
+"15564"
+]
+],
+[
+"Winterhauch (unbestätigt)",
+"2026-12-16",
+"2027-01-02",
+"fest",
+[
+"17194",
+"1179"
+]
+]
+],
+"raidstart": "2026-12-09",
+"reset": 3,
+"budget": 0.7
+}

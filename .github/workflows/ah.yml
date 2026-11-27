@@ -42,6 +42,10 @@ jobs:
       - name: Kennzahlen
         run: python kennzahlen.py
 
+      # Datendatei fürs Addon (ersetzt TSM/gf_addon.py auf dem PC): Zeitfenster, Tagesprofil, Raid-Katalog, Events
+      - name: Datendatei
+        run: python datendatei.py
+
       - name: Zustand sichern
         if: always()
         uses: actions/cache/save@v4

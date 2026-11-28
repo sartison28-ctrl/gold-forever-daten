@@ -1,5 +1,5 @@
 {
-"stand": 1795865100,
+"stand": 1795868820,
 "zyklen": [
 {
 "id": 7080,
@@ -55,8 +55,8 @@
 "rendite": 46,
 "kaufBis": 570,
 "verkauf": 899,
-"menge": 1335,
-"gold": 341286
+"menge": 1356,
+"gold": 346654
 },
 {
 "id": 8846,
@@ -97,6 +97,25 @@
 "gold": 253048
 },
 {
+"id": 16204,
+"kh": [
+6,
+9
+],
+"vh": [
+12,
+15
+],
+"tage": 11,
+"treffer": 7,
+"quote": 64,
+"rendite": 19,
+"kaufBis": 1743,
+"verkauf": 2965,
+"menge": 337,
+"gold": 230270
+},
+{
 "id": 14047,
 "kh": [
 21,
@@ -112,8 +131,8 @@
 "rendite": 27,
 "kaufBis": 460,
 "verkauf": 599,
-"menge": 2270,
-"gold": 222789
+"menge": 2267,
+"gold": 222494
 },
 {
 "id": 13463,
@@ -133,25 +152,6 @@
 "verkauf": 2149,
 "menge": 524,
 "gold": 210814
-},
-{
-"id": 16204,
-"kh": [
-6,
-9
-],
-"vh": [
-12,
-15
-],
-"tage": 11,
-"treffer": 7,
-"quote": 64,
-"rendite": 19,
-"kaufBis": 1743,
-"verkauf": 2965,
-"menge": 304,
-"gold": 207721
 },
 {
 "id": 7077,
@@ -188,8 +188,8 @@
 "rendite": 45,
 "kaufBis": 200,
 "verkauf": 354,
-"menge": 1381,
-"gold": 188230
+"menge": 1383,
+"gold": 188502
 },
 {
 "id": 12803,
@@ -207,8 +207,8 @@
 "rendite": 62,
 "kaufBis": 3200,
 "verkauf": 7810,
-"menge": 52,
-"gold": 179520
+"menge": 53,
+"gold": 182972
 },
 {
 "id": 15417,
@@ -226,27 +226,27 @@
 "rendite": 19,
 "kaufBis": 6475,
 "verkauf": 8397,
-"menge": 184,
-"gold": 165837
+"menge": 185,
+"gold": 166738
 },
 {
-"id": 15564,
+"id": 11370,
 "kh": [
-0,
-3
+12,
+15
 ],
 "vh": [
-21,
-24
+18,
+21
 ],
 "tage": 11,
-"treffer": 9,
-"quote": 82,
-"rendite": 64,
-"kaufBis": 2780,
-"verkauf": 7401,
-"menge": 43,
-"gold": 149556
+"treffer": 10,
+"quote": 91,
+"rendite": 32,
+"kaufBis": 1279,
+"verkauf": 1911,
+"menge": 310,
+"gold": 151181
 },
 {
 "id": 15416,
@@ -264,46 +264,27 @@
 "rendite": 33,
 "kaufBis": 9900,
 "verkauf": 13448,
-"menge": 71,
-"gold": 148485
+"menge": 70,
+"gold": 146394
 },
 {
-"id": 2319,
+"id": 15564,
 "kh": [
+0,
+3
+],
+"vh": [
 21,
 24
 ],
-"vh": [
-9,
-12
-],
-"tage": 10,
-"treffer": 10,
-"quote": 100,
-"rendite": 85,
-"kaufBis": 103,
-"verkauf": 198,
-"menge": 1668,
-"gold": 141946
-},
-{
-"id": 11370,
-"kh": [
-12,
-15
-],
-"vh": [
-18,
-21
-],
-"tage": 10,
+"tage": 11,
 "treffer": 9,
-"quote": 90,
-"rendite": 36,
-"kaufBis": 1211,
-"verkauf": 1798,
-"menge": 315,
-"gold": 140927
+"quote": 82,
+"rendite": 64,
+"kaufBis": 2780,
+"verkauf": 7401,
+"menge": 42,
+"gold": 146078
 },
 {
 "id": 248711,
@@ -321,8 +302,27 @@
 "rendite": 62,
 "kaufBis": 9994,
 "verkauf": 16997,
-"menge": 25,
-"gold": 138445
+"menge": 26,
+"gold": 143983
+},
+{
+"id": 2319,
+"kh": [
+21,
+24
+],
+"vh": [
+9,
+12
+],
+"tage": 10,
+"treffer": 10,
+"quote": 100,
+"rendite": 85,
+"kaufBis": 103,
+"verkauf": 198,
+"menge": 1663,
+"gold": 141521
 },
 {
 "id": 248710,
@@ -340,8 +340,27 @@
 "rendite": 119,
 "kaufBis": 1761,
 "verkauf": 4650,
-"menge": 51,
-"gold": 135481
+"menge": 50,
+"gold": 132825
+},
+{
+"id": 20520,
+"kh": [
+0,
+3
+],
+"vh": [
+12,
+15
+],
+"tage": 10,
+"treffer": 7,
+"quote": 70,
+"rendite": 22,
+"kaufBis": 18992,
+"verkauf": 27596,
+"menge": 26,
+"gold": 131480
 },
 {
 "id": 12809,
@@ -378,27 +397,8 @@
 "rendite": 21,
 "kaufBis": 2489,
 "verkauf": 4784,
-"menge": 103,
-"gold": 127048
-},
-{
-"id": 20520,
-"kh": [
-0,
-3
-],
-"vh": [
-12,
-15
-],
-"tage": 10,
-"treffer": 7,
-"quote": 70,
-"rendite": 22,
-"kaufBis": 18992,
-"verkauf": 27596,
-"menge": 25,
-"gold": 126423
+"menge": 104,
+"gold": 128281
 },
 {
 "id": 274971,
@@ -435,8 +435,8 @@
 "rendite": 51,
 "kaufBis": 164,
 "verkauf": 263,
-"menge": 1367,
-"gold": 117356
+"menge": 1368,
+"gold": 117442
 },
 {
 "id": 14256,
@@ -492,8 +492,8 @@
 "rendite": 77,
 "kaufBis": 398,
 "verkauf": 744,
-"menge": 357,
-"gold": 110241
+"menge": 354,
+"gold": 109315
 },
 {
 "id": 7067,
@@ -530,8 +530,8 @@
 "rendite": 22,
 "kaufBis": 1341,
 "verkauf": 1908,
-"menge": 284,
-"gold": 107147
+"menge": 285,
+"gold": 107524
 },
 {
 "id": 730,
@@ -549,8 +549,8 @@
 "rendite": 51,
 "kaufBis": 260,
 "verkauf": 464,
-"menge": 651,
-"gold": 107000
+"menge": 632,
+"gold": 103877
 },
 {
 "id": 7078,
@@ -587,8 +587,8 @@
 "rendite": 53,
 "kaufBis": 617,
 "verkauf": 1396,
-"menge": 157,
-"gold": 100209
+"menge": 159,
+"gold": 101486
 },
 {
 "id": 7069,
@@ -663,8 +663,8 @@
 "rendite": 56,
 "kaufBis": 1119,
 "verkauf": 1734,
-"menge": 194,
-"gold": 92241
+"menge": 195,
+"gold": 92716
 },
 {
 "id": 248708,
@@ -686,23 +686,23 @@
 "gold": 91800
 },
 {
-"id": 13926,
+"id": 3860,
 "kh": [
-15,
-18
+0,
+3
 ],
 "vh": [
 12,
 15
 ],
-"tage": 10,
-"treffer": 6,
-"quote": 60,
+"tage": 11,
+"treffer": 7,
+"quote": 64,
 "rendite": 15,
-"kaufBis": 15638,
-"verkauf": 22600,
-"menge": 26,
-"gold": 90979
+"kaufBis": 1030,
+"verkauf": 1273,
+"menge": 783,
+"gold": 89365
 },
 {
 "id": 13465,
@@ -720,27 +720,8 @@
 "rendite": 13,
 "kaufBis": 1208,
 "verkauf": 1489,
-"menge": 615,
-"gold": 88919
-},
-{
-"id": 3860,
-"kh": [
-0,
-3
-],
-"vh": [
-12,
-15
-],
-"tage": 11,
-"treffer": 7,
-"quote": 64,
-"rendite": 15,
-"kaufBis": 1030,
-"verkauf": 1273,
-"menge": 769,
-"gold": 87767
+"menge": 617,
+"gold": 89208
 },
 {
 "id": 7068,
@@ -758,11 +739,30 @@
 "rendite": 41,
 "kaufBis": 3870,
 "verkauf": 5394,
-"menge": 77,
-"gold": 86922
+"menge": 78,
+"gold": 88051
+},
+{
+"id": 13926,
+"kh": [
+15,
+18
+],
+"vh": [
+12,
+15
+],
+"tage": 10,
+"treffer": 6,
+"quote": 60,
+"rendite": 15,
+"kaufBis": 15638,
+"verkauf": 22600,
+"menge": 25,
+"gold": 87480
 }
 ],
-"zyklenGold": 6215990,
+"zyklenGold": 6259352,
 "signale": {
 "leer": {
 "n": 146,
@@ -794,58 +794,58 @@
 "quote": 81,
 "aenderung": -29.1
 },
-"offen": 345
+"offen": 365
 },
 "verpasst": [
 {
 "id": 12360,
 "art": "kauf",
 "p": 370999,
-"R": 492999,
+"R": 492998,
 "t": 1795822140,
 "h": 0,
 "n": 22,
-"gewinn": 2141701
+"gewinn": 2141680
 },
 {
 "id": 15407,
 "art": "kauf",
 "p": 242885,
-"R": 329649,
+"R": 329499,
 "t": 1795787880,
 "h": 14,
-"n": 16,
-"gewinn": 1124512
+"n": 17,
+"gewinn": 1192363
 },
 {
 "id": 12363,
 "art": "kauf",
 "p": 89000,
-"R": 118450,
+"R": 118400,
 "t": 1795836600,
 "h": 4,
 "n": 37,
-"gewinn": 870517
+"gewinn": 868760
 },
 {
 "id": 15409,
 "art": "kauf",
 "p": 455099,
-"R": 599085,
+"R": 598270,
 "t": 1795787880,
 "h": 14,
 "n": 7,
-"gewinn": 798222
+"gewinn": 792802
 },
 {
 "id": 16006,
 "art": "kauf",
 "p": 410547,
-"R": 552854,
+"R": 552499,
 "t": 1795818780,
 "h": 23,
 "n": 6,
-"gewinn": 687985
+"gewinn": 685962
 },
 {
 "id": 16204,
@@ -854,18 +854,18 @@
 "R": 2196,
 "t": 1795834680,
 "h": 3,
-"n": 609,
-"gewinn": 480303
+"n": 674,
+"gewinn": 531246
 },
 {
 "id": 12811,
 "art": "kauf",
 "p": 72500,
-"R": 99394,
+"R": 99299,
 "t": 1795852380,
 "h": 8,
-"n": 21,
-"gewinn": 460420
+"n": 22,
+"gewinn": 480349
 },
 {
 "id": 279966,
@@ -875,7 +875,7 @@
 "t": 1795818780,
 "h": 23,
 "n": 106,
-"gewinn": 444911
+"gewinn": 444860
 },
 {
 "id": 11176,
@@ -884,38 +884,38 @@
 "R": 2044,
 "t": 1795815180,
 "h": 22,
-"n": 956,
-"gewinn": 346836
+"n": 960,
+"gewinn": 348287
 },
 {
 "id": 15419,
 "art": "kauf",
 "p": 3500,
-"R": 7398,
+"R": 7397,
 "t": 1795846080,
 "h": 7,
 "n": 93,
-"gewinn": 328113
+"gewinn": 328024
 },
 {
 "id": 248822,
 "art": "kauf",
 "p": 50999,
-"R": 71514,
+"R": 71144,
 "t": 1795825620,
 "h": 1,
 "n": 18,
-"gewinn": 304915
+"gewinn": 298580
 },
 {
 "id": 12809,
 "art": "kauf",
 "p": 18999,
-"R": 29547,
+"R": 29500,
 "t": 1795782960,
 "h": 13,
 "n": 33,
-"gewinn": 299347
+"gewinn": 297858
 },
 {
 "id": 15416,
@@ -924,8 +924,8 @@
 "R": 10899,
 "t": 1795836600,
 "h": 4,
-"n": 143,
-"gewinn": 283215
+"n": 140,
+"gewinn": 277206
 },
 {
 "id": 7076,
@@ -935,7 +935,7 @@
 "t": 1795825620,
 "h": 1,
 "n": 28,
-"gewinn": 249664
+"gewinn": 249650
 },
 {
 "id": 8396,
@@ -944,8 +944,8 @@
 "R": 27900,
 "t": 1795865100,
 "h": 12,
-"n": 69,
-"gewinn": 207621
+"n": 70,
+"gewinn": 210630
 },
 {
 "id": 8932,
@@ -954,38 +954,38 @@
 "R": 700,
 "t": 1795846080,
 "h": 7,
-"n": 549,
-"gewinn": 203679
+"n": 539,
+"gewinn": 199969
 },
 {
 "id": 251290,
 "art": "kauf",
 "p": 348995,
-"R": 435276,
+"R": 435000,
 "t": 1795782960,
 "h": 13,
 "n": 3,
-"gewinn": 193551
+"gewinn": 192765
 },
 {
 "id": 249431,
 "art": "kauf",
 "p": 2829,
-"R": 4935,
+"R": 4895,
 "t": 1795847640,
 "h": 7,
-"n": 101,
-"gewinn": 187784
+"n": 102,
+"gewinn": 185767
 },
 {
 "id": 249429,
 "art": "kauf",
 "p": 1476,
-"R": 2933,
+"R": 2900,
 "t": 1795847640,
 "h": 7,
-"n": 143,
-"gewinn": 187380
+"n": 144,
+"gewinn": 184176
 },
 {
 "id": 13466,
@@ -994,38 +994,48 @@
 "R": 2399,
 "t": 1795840680,
 "h": 5,
-"n": 654,
-"gewinn": 169729
+"n": 651,
+"gewinn": 168641
 },
 {
 "id": 13926,
 "art": "kauf",
 "p": 12587,
-"R": 16976,
+"R": 16968,
 "t": 1795802280,
 "h": 18,
 "n": 44,
-"gewinn": 155789
+"gewinn": 155434
 },
 {
 "id": 11137,
 "art": "kauf",
 "p": 688,
-"R": 861,
+"R": 860,
 "t": 1795830900,
 "h": 2,
-"n": 1041,
-"gewinn": 135772
+"n": 1035,
+"gewinn": 133515
 },
 {
 "id": 7078,
 "art": "kauf",
 "p": 10042,
-"R": 12865,
+"R": 12867,
 "t": 1795822140,
 "h": 0,
-"n": 59,
-"gewinn": 128605
+"n": 58,
+"gewinn": 126535
+},
+{
+"id": 279945,
+"art": "kauf",
+"p": 44200,
+"R": 58198,
+"t": 1795868820,
+"h": 13,
+"n": 11,
+"gewinn": 121969
 },
 {
 "id": 18042,
@@ -1034,58 +1044,48 @@
 "R": 35,
 "t": 1795808220,
 "h": 20,
-"n": 16238,
-"gewinn": 117725
-},
-{
-"id": 12361,
-"art": "kauf",
-"p": 24494,
-"R": 34893,
-"t": 1795840680,
-"h": 5,
-"n": 13,
-"gewinn": 112506
+"n": 15917,
+"gewinn": 115398
 },
 {
 "id": 7080,
 "art": "verk",
 "p": 59892,
-"R": 44048,
+"R": 44096,
 "t": 1795811400,
 "h": 21,
-"n": 85,
-"gewinn": 1092198
+"n": 84,
+"gewinn": 1075317
 },
 {
 "id": 16203,
 "art": "verk",
-"p": 38000,
-"R": 30999,
+"p": 37996,
+"R": 31099,
 "t": 1795793700,
 "h": 16,
-"n": 161,
-"gewinn": 821180
+"n": 160,
+"gewinn": 799551
 },
 {
 "id": 13463,
 "art": "verk",
 "p": 2643,
-"R": 1822,
+"R": 1825,
 "t": 1795865100,
 "h": 12,
 "n": 1049,
-"gewinn": 722079
+"gewinn": 719456
 },
 {
 "id": 14342,
 "art": "verk",
 "p": 729999,
-"R": 629949,
+"R": 629998,
 "t": 1795802280,
 "h": 18,
 "n": 8,
-"gewinn": 508400
+"gewinn": 508008
 },
 {
 "id": 14559,
@@ -1104,68 +1104,88 @@
 "R": 98,
 "t": 1795852380,
 "h": 8,
-"n": 1217,
-"gewinn": 401001
+"n": 1270,
+"gewinn": 418465
 },
 {
 "id": 20725,
 "art": "verk",
-"p": 608729,
+"p": 619964,
 "R": 450000,
 "t": 1795811400,
 "h": 21,
 "n": 3,
-"gewinn": 384877
+"gewinn": 416897
+},
+{
+"id": 13467,
+"art": "verk",
+"p": 2584,
+"R": 1287,
+"t": 1795868820,
+"h": 13,
+"n": 334,
+"gewinn": 390045
 },
 {
 "id": 14227,
 "art": "verk",
-"p": 9449,
-"R": 6779,
+"p": 9448,
+"R": 6780,
 "t": 1795865100,
 "h": 12,
 "n": 174,
-"gewinn": 382286
+"gewinn": 382034
 },
 {
 "id": 7068,
 "art": "verk",
-"p": 6996,
+"p": 6992,
 "R": 4222,
 "t": 1795825620,
 "h": 1,
-"n": 155,
-"gewinn": 375751
+"n": 156,
+"gewinn": 377582
 },
 {
 "id": 4304,
 "art": "verk",
-"p": 840,
-"R": 659,
-"t": 1795782960,
+"p": 820,
+"R": 660,
+"t": 1795868820,
 "h": 13,
-"n": 2670,
-"gewinn": 369795
-},
-{
-"id": 12804,
-"art": "verk",
-"p": 23500,
-"R": 13511,
-"t": 1795836600,
-"h": 4,
-"n": 34,
-"gewinn": 299676
+"n": 2713,
+"gewinn": 322847
 },
 {
 "id": 274971,
 "art": "verk",
 "p": 1578,
-"R": 1092,
+"R": 1090,
 "t": 1795793700,
 "h": 16,
-"n": 735,
-"gewinn": 299218
+"n": 734,
+"gewinn": 300279
+},
+{
+"id": 12804,
+"art": "verk",
+"p": 23500,
+"R": 13522,
+"t": 1795836600,
+"h": 4,
+"n": 34,
+"gewinn": 299302
+},
+{
+"id": 12803,
+"art": "verk",
+"p": 6985,
+"R": 3888,
+"t": 1795834680,
+"h": 3,
+"n": 107,
+"gewinn": 294009
 },
 {
 "id": 13466,
@@ -1174,38 +1194,38 @@
 "R": 2399,
 "t": 1795847640,
 "h": 7,
-"n": 654,
-"gewinn": 294627
+"n": 651,
+"gewinn": 293601
 },
 {
-"id": 12803,
+"id": 8846,
 "art": "verk",
-"p": 6996,
-"R": 3882,
-"t": 1795834680,
-"h": 3,
-"n": 105,
-"gewinn": 290188
+"p": 3506,
+"R": 2796,
+"t": 1795803840,
+"h": 19,
+"n": 516,
+"gewinn": 275905
 },
 {
 "id": 11370,
 "art": "verk",
-"p": 1899,
-"R": 1377,
+"p": 1900,
+"R": 1380,
 "t": 1795852380,
 "h": 8,
-"n": 631,
-"gewinn": 269153
+"n": 621,
+"gewinn": 263925
 },
 {
 "id": 16202,
 "art": "verk",
-"p": 13245,
-"R": 10887,
+"p": 13244,
+"R": 10888,
 "t": 1795811400,
 "h": 21,
-"n": 149,
-"gewinn": 252592
+"n": 150,
+"gewinn": 254069
 },
 {
 "id": 12810,
@@ -1214,8 +1234,8 @@
 "R": 14700,
 "t": 1795811400,
 "h": 21,
-"n": 157,
-"gewinn": 244354
+"n": 155,
+"gewinn": 241241
 },
 {
 "id": 4291,
@@ -1224,18 +1244,18 @@
 "R": 477,
 "t": 1795811400,
 "h": 21,
-"n": 786,
-"gewinn": 220944
+"n": 789,
+"gewinn": 221787
 },
 {
-"id": 248710,
+"id": 11371,
 "art": "verk",
-"p": 4700,
-"R": 2323,
-"t": 1795793700,
-"h": 16,
-"n": 102,
-"gewinn": 218433
+"p": 18840,
+"R": 16000,
+"t": 1795802280,
+"h": 18,
+"n": 115,
+"gewinn": 218270
 },
 {
 "id": 7077,
@@ -1248,54 +1268,24 @@
 "gewinn": 214708
 },
 {
-"id": 11371,
-"art": "verk",
-"p": 18840,
-"R": 16000,
-"t": 1795802280,
-"h": 18,
-"n": 113,
-"gewinn": 214474
-},
-{
 "id": 11177,
 "art": "verk",
 "p": 9999,
 "R": 7877,
 "t": 1795847640,
 "h": 7,
-"n": 132,
-"gewinn": 214110
+"n": 131,
+"gewinn": 212488
 },
 {
-"id": 13465,
+"id": 248710,
 "art": "verk",
-"p": 1522,
-"R": 1293,
-"t": 1795865100,
-"h": 12,
-"n": 1231,
-"gewinn": 187604
-},
-{
-"id": 15416,
-"art": "verk",
-"p": 12839,
-"R": 10899,
-"t": 1795802280,
-"h": 18,
-"n": 143,
-"gewinn": 185549
-},
-{
-"id": 248815,
-"art": "verk",
-"p": 2909,
-"R": 2050,
-"t": 1795865100,
-"h": 12,
-"n": 260,
-"gewinn": 185522
+"p": 4700,
+"R": 2347,
+"t": 1795793700,
+"h": 16,
+"n": 100,
+"gewinn": 211800
 },
 {
 "id": 20520,
@@ -1304,38 +1294,68 @@
 "R": 20800,
 "t": 1795808220,
 "h": 20,
-"n": 50,
-"gewinn": 185357
+"n": 52,
+"gewinn": 192771
+},
+{
+"id": 13465,
+"art": "verk",
+"p": 1522,
+"R": 1294,
+"t": 1795865100,
+"h": 12,
+"n": 1234,
+"gewinn": 187444
 },
 {
 "id": 8839,
 "art": "verk",
-"p": 1894,
-"R": 1473,
+"p": 1891,
+"R": 1474,
 "t": 1795791660,
 "h": 16,
-"n": 568,
-"gewinn": 185338
+"n": 571,
+"gewinn": 184118
+},
+{
+"id": 248815,
+"art": "verk",
+"p": 2909,
+"R": 2050,
+"t": 1795865100,
+"h": 12,
+"n": 258,
+"gewinn": 184095
+},
+{
+"id": 15416,
+"art": "verk",
+"p": 12839,
+"R": 10899,
+"t": 1795802280,
+"h": 18,
+"n": 140,
+"gewinn": 181726
 },
 {
 "id": 4339,
 "art": "verk",
 "p": 2679,
-"R": 2129,
+"R": 2130,
 "t": 1795865100,
 "h": 12,
-"n": 436,
-"gewinn": 181179
+"n": 435,
+"gewinn": 180546
 },
 {
 "id": 7067,
 "art": "verk",
 "p": 4028,
-"R": 2896,
+"R": 2897,
 "t": 1795793700,
 "h": 16,
 "n": 193,
-"gewinn": 179605
+"gewinn": 179412
 },
 {
 "id": 2319,
@@ -1344,28 +1364,18 @@
 "R": 128,
 "t": 1795825620,
 "h": 1,
-"n": 3337,
-"gewinn": 178362
+"n": 3326,
+"gewinn": 177774
 },
 {
-"id": 16000,
+"id": 4234,
 "art": "verk",
-"p": 12593,
-"R": 8535,
-"t": 1795865100,
-"h": 12,
-"n": 52,
-"gewinn": 178274
-},
-{
-"id": 730,
-"art": "verk",
-"p": 455,
-"R": 296,
-"t": 1795793700,
-"h": 16,
-"n": 1303,
-"gewinn": 177533
+"p": 317,
+"R": 237,
+"t": 1795846080,
+"h": 7,
+"n": 2767,
+"gewinn": 177503
 },
 {
 "id": 4398,
@@ -1378,34 +1388,24 @@
 "gewinn": 177024
 },
 {
-"id": 4234,
+"id": 730,
 "art": "verk",
-"p": 316,
-"R": 236,
-"t": 1795846080,
-"h": 7,
-"n": 2762,
-"gewinn": 175939
-},
-{
-"id": 8846,
-"art": "verk",
-"p": 3300,
-"R": 2795,
-"t": 1795803840,
-"h": 19,
-"n": 517,
-"gewinn": 175780
+"p": 455,
+"R": 297,
+"t": 1795793700,
+"h": 16,
+"n": 1265,
+"gewinn": 171091
 },
 {
 "id": 12820,
 "art": "verk",
 "p": 5900,
-"R": 4505,
+"R": 4500,
 "t": 1795808220,
 "h": 20,
-"n": 153,
-"gewinn": 168300
+"n": 152,
+"gewinn": 167960
 },
 {
 "id": 11178,
@@ -1414,8 +1414,8 @@
 "R": 18900,
 "t": 1795797780,
 "h": 17,
-"n": 76,
-"gewinn": 165645
+"n": 75,
+"gewinn": 163466
 },
 {
 "id": 13545,
@@ -1424,28 +1424,28 @@
 "R": 116,
 "t": 1795811400,
 "h": 21,
-"n": 483,
-"gewinn": 159631
-},
-{
-"id": 13464,
-"art": "verk",
-"p": 1891,
-"R": 1320,
-"t": 1795808220,
-"h": 20,
-"n": 330,
-"gewinn": 157063
+"n": 486,
+"gewinn": 160623
 },
 {
 "id": 11040,
 "art": "verk",
 "p": 2500,
-"R": 1632,
+"R": 1631,
 "t": 1795815180,
 "h": 22,
 "n": 211,
-"gewinn": 156773
+"gewinn": 156984
+},
+{
+"id": 16000,
+"art": "verk",
+"p": 12089,
+"R": 8500,
+"t": 1795865100,
+"h": 12,
+"n": 52,
+"gewinn": 155196
 },
 {
 "id": 18042,
@@ -1454,18 +1454,38 @@
 "R": 35,
 "t": 1795830900,
 "h": 2,
-"n": 16238,
-"gewinn": 156696
+"n": 15917,
+"gewinn": 153599
 },
 {
 "id": 11186,
 "art": "verk",
-"p": 1211,
-"R": 694,
+"p": 1224,
+"R": 697,
 "t": 1795847640,
 "h": 7,
-"n": 315,
-"gewinn": 143624
+"n": 318,
+"gewinn": 148124
+},
+{
+"id": 3356,
+"art": "verk",
+"p": 274,
+"R": 145,
+"t": 1795808220,
+"h": 20,
+"n": 1258,
+"gewinn": 145047
+},
+{
+"id": 7069,
+"art": "verk",
+"p": 6799,
+"R": 4559,
+"t": 1795818780,
+"h": 23,
+"n": 76,
+"gewinn": 144403
 },
 {
 "id": 3859,
@@ -1474,18 +1494,18 @@
 "R": 835,
 "t": 1795797780,
 "h": 17,
-"n": 713,
-"gewinn": 142279
+"n": 709,
+"gewinn": 141480
 },
 {
-"id": 7069,
+"id": 13464,
 "art": "verk",
-"p": 6733,
-"R": 4529,
-"t": 1795818780,
-"h": 23,
-"n": 76,
-"gewinn": 141880
+"p": 1834,
+"R": 1321,
+"t": 1795808220,
+"h": 20,
+"n": 332,
+"gewinn": 139871
 },
 {
 "id": 2673,
@@ -1494,18 +1514,18 @@
 "R": 1196,
 "t": 1795808220,
 "h": 20,
-"n": 164,
-"gewinn": 137891
+"n": 162,
+"gewinn": 136209
 },
 {
-"id": 3356,
+"id": 3464,
 "art": "verk",
-"p": 267,
-"R": 145,
-"t": 1795808220,
-"h": 20,
-"n": 1240,
-"gewinn": 134725
+"p": 67,
+"R": 26,
+"t": 1795847640,
+"h": 7,
+"n": 3567,
+"gewinn": 134297
 },
 {
 "id": 15994,
@@ -1518,54 +1538,14 @@
 "gewinn": 132077
 },
 {
-"id": 3464,
-"art": "verk",
-"p": 65,
-"R": 26,
-"t": 1795847640,
-"h": 7,
-"n": 3550,
-"gewinn": 126912
-},
-{
-"id": 273103,
-"art": "verk",
-"p": 75000,
-"R": 29200,
-"t": 1795787880,
-"h": 14,
-"n": 3,
-"gewinn": 126150
-},
-{
 "id": 8393,
 "art": "verk",
 "p": 13710,
-"R": 9462,
+"R": 9451,
 "t": 1795793700,
 "h": 16,
 "n": 35,
-"gewinn": 124687
-},
-{
-"id": 248825,
-"art": "verk",
-"p": 1384,
-"R": 1008,
-"t": 1795822140,
-"h": 0,
-"n": 403,
-"gewinn": 123640
-},
-{
-"id": 2592,
-"art": "verk",
-"p": 266,
-"R": 207,
-"t": 1795782960,
-"h": 13,
-"n": 2735,
-"gewinn": 123621
+"gewinn": 125072
 },
 {
 "id": 13455,
@@ -1574,138 +1554,128 @@
 "R": 2780,
 "t": 1795782960,
 "h": 13,
-"n": 38,
-"gewinn": 121320
+"n": 39,
+"gewinn": 124513
+},
+{
+"id": 248825,
+"art": "verk",
+"p": 1384,
+"R": 1009,
+"t": 1795822140,
+"h": 0,
+"n": 407,
+"gewinn": 124460
+},
+{
+"id": 273103,
+"art": "verk",
+"p": 75000,
+"R": 29900,
+"t": 1795787880,
+"h": 14,
+"n": 3,
+"gewinn": 124050
+},
+{
+"id": 2592,
+"art": "verk",
+"p": 266,
+"R": 208,
+"t": 1795782960,
+"h": 13,
+"n": 2736,
+"gewinn": 122299
+},
+{
+"id": 248708,
+"art": "verk",
+"p": 8490,
+"R": 6098,
+"t": 1795802280,
+"h": 18,
+"n": 60,
+"gewinn": 118050
+},
+{
+"id": 4402,
+"art": "verk",
+"p": 1749,
+"R": 1165,
+"t": 1795836600,
+"h": 4,
+"n": 237,
+"gewinn": 117682
 },
 {
 "id": 248821,
 "art": "verk",
-"p": 4069,
+"p": 4031,
 "R": 3022,
 "t": 1795865100,
 "h": 12,
-"n": 142,
-"gewinn": 119784
+"n": 144,
+"gewinn": 116272
 },
 {
 "id": 6037,
 "art": "verk",
-"p": 1919,
+"p": 1900,
 "R": 1488,
 "t": 1795791660,
 "h": 16,
-"n": 357,
-"gewinn": 119612
+"n": 359,
+"gewinn": 113803
 },
 {
-"id": 4479,
+"id": 4338,
 "art": "verk",
-"p": 1346,
-"R": 339,
-"t": 1795861740,
-"h": 11,
-"n": 127,
-"gewinn": 119341
+"p": 466,
+"R": 397,
+"t": 1795865100,
+"h": 12,
+"n": 2487,
+"gewinn": 113655
 },
 {
 "id": 7078,
 "art": "verk",
 "p": 15594,
-"R": 12865,
+"R": 12867,
 "t": 1795793700,
 "h": 16,
-"n": 59,
-"gewinn": 115008
+"n": 58,
+"gewinn": 112943
+},
+{
+"id": 248824,
+"art": "verk",
+"p": 37402,
+"R": 31803,
+"t": 1795847640,
+"h": 7,
+"n": 30,
+"gewinn": 111867
 },
 {
 "id": 4236,
 "art": "verk",
-"p": 2334,
+"p": 2327,
 "R": 1745,
 "t": 1795782960,
 "h": 13,
-"n": 241,
-"gewinn": 113824
+"n": 237,
+"gewinn": 110359
 },
 {
 "id": 249399,
 "art": "verk",
 "p": 5500,
-"R": 4698,
+"R": 4700,
 "t": 1795861740,
 "h": 11,
-"n": 208,
-"gewinn": 109512
-},
-{
-"id": 248824,
-"art": "verk",
-"p": 37245,
-"R": 31775,
-"t": 1795847640,
-"h": 7,
-"n": 30,
-"gewinn": 108232
-},
-{
-"id": 249409,
-"art": "verk",
-"p": 11585,
-"R": 9999,
-"t": 1795861740,
-"h": 11,
-"n": 107,
-"gewinn": 107668
-},
-{
-"id": 13867,
-"art": "verk",
-"p": 28897,
-"R": 24899,
-"t": 1795818780,
-"h": 23,
-"n": 42,
-"gewinn": 107211
-},
-{
-"id": 7911,
-"art": "verk",
-"p": 1732,
-"R": 1293,
-"t": 1795791660,
-"h": 16,
-"n": 304,
-"gewinn": 107129
-},
-{
-"id": 13760,
-"art": "verk",
-"p": 545,
-"R": 352,
-"t": 1795808220,
-"h": 20,
-"n": 648,
-"gewinn": 107082
-},
-{
-"id": 4402,
-"art": "verk",
-"p": 1699,
-"R": 1163,
-"t": 1795836600,
-"h": 4,
-"n": 237,
-"gewinn": 106898
-},
-{
-"id": 3358,
-"art": "verk",
-"p": 658,
-"R": 476,
-"t": 1795834680,
-"h": 3,
-"n": 715,
-"gewinn": 106606
+"n": 206,
+"gewinn": 108150
 },
 {
 "id": 9210,
@@ -1714,8 +1684,18 @@
 "R": 6473,
 "t": 1795846080,
 "h": 7,
-"n": 50,
-"gewinn": 105939
+"n": 51,
+"gewinn": 108058
+},
+{
+"id": 249409,
+"art": "verk",
+"p": 11585,
+"R": 10000,
+"t": 1795861740,
+"h": 11,
+"n": 106,
+"gewinn": 106609
 },
 {
 "id": 1529,
@@ -1724,48 +1704,98 @@
 "R": 900,
 "t": 1795787880,
 "h": 14,
-"n": 138,
-"gewinn": 104962
+"n": 139,
+"gewinn": 105723
+},
+{
+"id": 7911,
+"art": "verk",
+"p": 1725,
+"R": 1294,
+"t": 1795868820,
+"h": 13,
+"n": 306,
+"gewinn": 105493
+},
+{
+"id": 8845,
+"art": "verk",
+"p": 5349,
+"R": 4605,
+"t": 1795797780,
+"h": 17,
+"n": 221,
+"gewinn": 105317
+},
+{
+"id": 3358,
+"art": "verk",
+"p": 658,
+"R": 477,
+"t": 1795834680,
+"h": 3,
+"n": 709,
+"gewinn": 105002
+},
+{
+"id": 5634,
+"art": "verk",
+"p": 1990,
+"R": 1597,
+"t": 1795868820,
+"h": 13,
+"n": 357,
+"gewinn": 104779
+},
+{
+"id": 248711,
+"art": "verk",
+"p": 14295,
+"R": 11574,
+"t": 1795808220,
+"h": 20,
+"n": 52,
+"gewinn": 104325
 },
 {
 "id": 4233,
 "art": "verk",
 "p": 968,
-"R": 652,
+"R": 654,
 "t": 1795802280,
 "h": 18,
-"n": 387,
-"gewinn": 103561
+"n": 392,
+"gewinn": 104115
 },
 {
-"id": 248711,
+"id": 13867,
 "art": "verk",
-"p": 14294,
-"R": 11551,
-"t": 1795808220,
-"h": 20,
-"n": 51,
-"gewinn": 103417
+"p": 28897,
+"R": 24900,
+"t": 1795818780,
+"h": 23,
+"n": 40,
+"gewinn": 102085
 },
 {
 "id": 250340,
 "art": "verk",
 "p": 1100,
-"R": 614,
+"R": 615,
 "t": 1795811400,
 "h": 21,
-"n": 238,
-"gewinn": 102578
+"n": 237,
+"gewinn": 101910
 },
 {
 "id": 287013,
 "art": "verk",
 "p": 151500,
-"R": 93000,
+"R": 93250,
 "t": 1795791660,
 "h": 16,
 "n": 2,
-"gewinn": 101850
+"gewinn": 101350
 },
 {
 "id": 9060,
@@ -1788,24 +1818,24 @@
 "gewinn": 99234
 },
 {
-"id": 13457,
+"id": 4479,
 "art": "verk",
-"p": 12330,
-"R": 8990,
-"t": 1795815180,
-"h": 22,
-"n": 36,
-"gewinn": 98046
+"p": 1170,
+"R": 338,
+"t": 1795861740,
+"h": 11,
+"n": 126,
+"gewinn": 97461
 },
 {
-"id": 248708,
+"id": 13760,
 "art": "verk",
-"p": 8112,
-"R": 6085,
-"t": 1795802280,
-"h": 18,
-"n": 60,
-"gewinn": 97253
+"p": 527,
+"R": 352,
+"t": 1795808220,
+"h": 20,
+"n": 650,
+"gewinn": 96622
 },
 {
 "id": 10940,
@@ -1814,69 +1844,39 @@
 "R": 122,
 "t": 1795797780,
 "h": 17,
-"n": 2263,
-"gewinn": 95838
-},
-{
-"id": 11078,
-"art": "verk",
-"p": 3493,
-"R": 2571,
-"t": 1795830900,
-"h": 2,
-"n": 128,
-"gewinn": 95660
-},
-{
-"id": 279941,
-"art": "verk",
-"p": 1998,
-"R": 1360,
-"t": 1795846080,
-"h": 7,
-"n": 177,
-"gewinn": 95243
-},
-{
-"id": 8845,
-"art": "verk",
-"p": 5300,
-"R": 4602,
-"t": 1795797780,
-"h": 17,
-"n": 220,
-"gewinn": 95150
+"n": 2255,
+"gewinn": 95499
 }
 ],
 "segmente": [
 {
+"name": "Kräuter",
+"n": 45,
+"index": 102,
+"tr3": -4,
+"verlauf": [
+100,
+103,
+103,
+106,
+108,
+108,
+102
+]
+},
+{
 "name": "Fleisch",
 "n": 86,
-"index": 106,
-"tr3": 4,
+"index": 105,
+"tr3": 3,
 "verlauf": [
 101,
 100,
 99,
-101,
+102,
 100,
 106,
-106
-]
-},
-{
-"name": "Verzauberung",
-"n": 44,
-"index": 104,
-"tr3": 3,
-"verlauf": [
-100,
-100,
-102,
-101,
-100,
-102,
-104
+105
 ]
 },
 {
@@ -1910,9 +1910,24 @@
 ]
 },
 {
+"name": "Verzauberung",
+"n": 45,
+"index": 103,
+"tr3": 2,
+"verlauf": [
+100,
+100,
+103,
+101,
+100,
+102,
+103
+]
+},
+{
 "name": "Fläschchen",
 "n": 6,
-"index": 99,
+"index": 98,
 "tr3": 2,
 "verlauf": [
 96,
@@ -1921,7 +1936,7 @@
 96,
 99,
 99,
-99
+98
 ]
 },
 {
@@ -1937,36 +1952,6 @@
 100,
 100,
 100
-]
-},
-{
-"name": "Tränke",
-"n": 86,
-"index": 101,
-"tr3": 1,
-"verlauf": [
-98,
-98,
-95,
-100,
-101,
-102,
-101
-]
-},
-{
-"name": "Kräuter",
-"n": 45,
-"index": 107,
-"tr3": 1,
-"verlauf": [
-100,
-103,
-103,
-106,
-108,
-108,
-107
 ]
 },
 {
@@ -2015,8 +2000,23 @@
 ]
 },
 {
+"name": "Tränke",
+"n": 86,
+"index": 100,
+"tr3": 0,
+"verlauf": [
+98,
+98,
+95,
+100,
+101,
+102,
+100
+]
+},
+{
 "name": "Leder",
-"n": 146,
+"n": 148,
 "index": 100,
 "tr3": 0,
 "verlauf": [
@@ -2024,7 +2024,7 @@
 100,
 100,
 100,
-102,
+101,
 101,
 100
 ]
@@ -2061,7 +2061,7 @@
 },
 {
 "name": "Stoff",
-"n": 106,
+"n": 107,
 "index": 102,
 "tr3": 0,
 "verlauf": [
@@ -2070,7 +2070,7 @@
 104,
 102,
 104,
-106,
+105,
 102
 ]
 },
@@ -2095,7 +2095,7 @@
 "von": "Erz",
 "zu": "Barren",
 "r": 0.74,
-"rFolge": -0.17,
+"rFolge": -0.16,
 "tage": 12,
 "stufe": "info",
 "text": "Erz -3 % in 3 Tagen, Barren +0 % – laufen meist zusammen"
@@ -2103,11 +2103,11 @@
 {
 "von": "Kräuter",
 "zu": "Tränke",
-"r": 0.54,
-"rFolge": 0.12,
+"r": 0.57,
+"rFolge": 0.14,
 "tage": 12,
 "stufe": "info",
-"text": "Kräuter +1 % in 3 Tagen, Tränke +1 % – laufen meist zusammen"
+"text": "Kräuter -4 % in 3 Tagen, Tränke +0 % – laufen meist zusammen"
 },
 {
 "von": "Barren",
@@ -2119,49 +2119,40 @@
 "text": "Barren +0 % in 3 Tagen, Ingenieurskunst +0 % – laufen meist zusammen"
 },
 {
-"von": "Kräuter",
-"zu": "Elixiere",
-"r": 0.44,
-"rFolge": 0.26,
-"tage": 12,
-"stufe": "info",
-"text": "Kräuter +1 % in 3 Tagen, Elixiere +3 % – laufen meist zusammen"
-},
-{
 "von": "Fleisch",
 "zu": "Speisen",
-"r": 0.44,
-"rFolge": 0.44,
+"r": 0.43,
+"rFolge": 0.43,
 "tage": 12,
 "stufe": "info",
-"text": "Fleisch +4 % in 3 Tagen, Speisen +1 % – laufen meist zusammen"
+"text": "Fleisch +3 % in 3 Tagen, Speisen +1 % – laufen meist zusammen"
 },
 {
 "von": "Verzauberung",
 "zu": "Schriftrollen",
-"r": 0.32,
-"rFolge": -0.19,
+"r": 0.4,
+"rFolge": -0.27,
 "tage": 12,
 "stufe": "info",
-"text": "Verzauberung +3 % in 3 Tagen, Schriftrollen +1 % – noch kein klarer Zusammenhang"
+"text": "Verzauberung +2 % in 3 Tagen, Schriftrollen +1 % – noch kein klarer Zusammenhang"
+},
+{
+"von": "Kräuter",
+"zu": "Elixiere",
+"r": 0.39,
+"rFolge": 0.27,
+"tage": 12,
+"stufe": "info",
+"text": "Kräuter -4 % in 3 Tagen, Elixiere +3 % – noch kein klarer Zusammenhang"
 },
 {
 "von": "Elementar",
 "zu": "Tränke",
-"r": 0.26,
-"rFolge": -0.11,
+"r": 0.31,
+"rFolge": -0.18,
 "tage": 12,
 "stufe": "info",
-"text": "Elementar +1 % in 3 Tagen, Tränke +1 % – noch kein klarer Zusammenhang"
-},
-{
-"von": "Kräuter",
-"zu": "Fläschchen",
-"r": 0.0,
-"rFolge": -0.68,
-"tage": 12,
-"stufe": "info",
-"text": "Kräuter +1 % in 3 Tagen, Fläschchen +2 % – noch kein klarer Zusammenhang"
+"text": "Elementar +1 % in 3 Tagen, Tränke +0 % – noch kein klarer Zusammenhang"
 },
 {
 "von": "Stoff",
@@ -2171,6 +2162,15 @@
 "tage": 12,
 "stufe": "info",
 "text": "Stoff +0 % in 3 Tagen, Verbände +0 % – noch kein klarer Zusammenhang"
+},
+{
+"von": "Kräuter",
+"zu": "Fläschchen",
+"r": -0.02,
+"rFolge": -0.66,
+"tage": 12,
+"stufe": "info",
+"text": "Kräuter -4 % in 3 Tagen, Fläschchen +2 % – noch kein klarer Zusammenhang"
 }
 ],
 "itemseg": {
@@ -2726,132 +2726,76 @@
 },
 "blick": [
 {
-"id": 7080,
-"art": "steigt",
-"text": "Preisspitze (+34 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 74999,
-"R": 44048,
-"wert": 2630835
-},
-{
 "id": 12360,
 "art": "tief",
 "text": "23 % unter üblich – Kaufchance",
-"p": 379993,
-"R": 492999,
-"wert": 2486132
-},
-{
-"id": 13463,
-"art": "steigt",
-"text": "Preisspitze (+32 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 3150,
-"R": 1822,
-"wert": 1392547
+"p": 379749,
+"R": 492998,
+"wert": 2491478
 },
 {
 "id": 15407,
 "art": "tief",
 "text": "21 % unter üblich – Kaufchance",
-"p": 258880,
-"R": 329649,
-"wert": 1132312
+"p": 258900,
+"R": 329499,
+"wert": 1200183
 },
 {
 "id": 12363,
 "art": "tief",
 "text": "20 % unter üblich – Kaufchance",
-"p": 94500,
-"R": 118450,
-"wert": 886150
-},
-{
-"id": 8831,
-"art": "steigt",
-"text": "Preisspitze (+289 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 2998,
-"R": 609,
-"wert": 874191
-},
-{
-"id": 6052,
-"art": "steigt",
-"text": "Preisspitze (+1900 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 5999,
-"R": 315,
-"wert": 863968
-},
-{
-"id": 7070,
-"art": "steigt",
-"text": "Preisspitze (+346 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 3839,
-"R": 949,
-"wert": 820760
-},
-{
-"id": 16006,
-"art": "tief",
-"text": "25 % unter üblich – Kaufchance",
-"p": 416767,
-"R": 552854,
-"wert": 816522
+"p": 94782,
+"R": 118400,
+"wert": 873866
 },
 {
 "id": 15409,
 "art": "tief",
-"text": "19 % unter üblich – Kaufchance",
-"p": 482788,
-"R": 599085,
-"wert": 814079
+"text": "20 % unter üblich – Kaufchance",
+"p": 479898,
+"R": 598270,
+"wert": 828604
 },
 {
-"id": 7909,
-"art": "steigt",
-"text": "Preisspitze (+228 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 6794,
-"R": 1461,
-"wert": 677291
-},
-{
-"id": 3858,
-"art": "steigt",
-"text": "Preisspitze (+43 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 1358,
-"R": 998,
-"wert": 576997
-},
-{
-"id": 2838,
+"id": 16006,
 "art": "tief",
-"text": "80 % unter üblich – Kaufchance",
-"p": 61,
-"R": 310,
-"wert": 530619
+"text": "24 % unter üblich – Kaufchance",
+"p": 419000,
+"R": 552499,
+"wert": 800994
 },
 {
-"id": 8846,
+"id": 7971,
+"art": "leer",
+"text": "fast leergekauft (138 statt 744) – Preisspitze: verkaufen, nicht kaufen",
+"p": 10000,
+"R": 1493,
+"wert": 782644
+},
+{
+"id": 13928,
 "art": "steigt",
-"text": "Preisspitze (+28 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 3799,
-"R": 2795,
-"wert": 519068
+"text": "Preisspitze (+401 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 2999,
+"R": 495,
+"wert": 638520
 },
 {
-"id": 16204,
-"art": "tief",
-"text": "39 % unter üblich – Kaufchance",
-"p": 1346,
-"R": 2196,
-"wert": 517954
+"id": 8831,
+"art": "steigt",
+"text": "Preisspitze (+190 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 2128,
+"R": 610,
+"wert": 557106
 },
 {
-"id": 12811,
-"art": "tief",
-"text": "25 % unter üblich – Kaufchance",
-"p": 74897,
-"R": 99394,
-"wert": 514447
+"id": 12804,
+"art": "steigt",
+"text": "Preisspitze (+20 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 29690,
+"R": 13522,
+"wert": 549712
 },
 {
 "id": 279966,
@@ -2859,71 +2803,127 @@
 "text": "37 % unter üblich – Kaufchance",
 "p": 8105,
 "R": 12944,
-"wert": 512987
-},
-{
-"id": 248823,
-"art": "steigt",
-"text": "Preisspitze (+212 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 9994,
-"R": 3882,
-"wert": 507254
+"wert": 512934
 },
 {
 "id": 15419,
 "art": "tief",
-"text": "50 % unter üblich – Kaufchance",
-"p": 3665,
-"R": 7398,
-"wert": 496489
+"text": "51 % unter üblich – Kaufchance",
+"p": 3655,
+"R": 7397,
+"wert": 501428
 },
 {
-"id": 18042,
-"art": "leer",
-"text": "fast leergekauft (11700 statt 75524) – Preisspitze: verkaufen, nicht kaufen",
-"p": 65,
-"R": 35,
-"wert": 487140
-},
-{
-"id": 8836,
+"id": 13510,
 "art": "steigt",
-"text": "Preisspitze (+82 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 3761,
-"R": 1917,
-"wert": 483128
+"text": "Preisspitze (+53 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 319869,
+"R": 222244,
+"wert": 488125
 },
 {
-"id": 14227,
-"art": "steigt",
-"text": "Preisspitze (+32 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 9440,
-"R": 6779,
-"wert": 462927
-},
-{
-"id": 13467,
-"art": "leer",
-"text": "fast leergekauft (150 statt 2250) – Preisspitze: verkaufen, nicht kaufen",
-"p": 2584,
-"R": 1287,
-"wert": 429307
+"id": 12811,
+"art": "tief",
+"text": "21 % unter üblich – Kaufchance",
+"p": 78540,
+"R": 99299,
+"wert": 456698
 },
 {
 "id": 7082,
 "art": "tief",
 "text": "35 % unter üblich – Kaufchance",
-"p": 23899,
+"p": 23998,
 "R": 36695,
-"wert": 422268
+"wert": 419001
+},
+{
+"id": 8365,
+"art": "leer",
+"text": "fast leergekauft (745 statt 3715) – Preisspitze: verkaufen, nicht kaufen",
+"p": 588,
+"R": 73,
+"wert": 412000
+},
+{
+"id": 14227,
+"art": "steigt",
+"text": "Preisspitze (+25 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 9100,
+"R": 6780,
+"wert": 403680
+},
+{
+"id": 8836,
+"art": "steigt",
+"text": "Preisspitze (+69 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 3395,
+"R": 1917,
+"wert": 385758
+},
+{
+"id": 11176,
+"art": "tief",
+"text": "18 % unter üblich – Kaufchance",
+"p": 1669,
+"R": 2044,
+"wert": 360000
+},
+{
+"id": 6052,
+"art": "steigt",
+"text": "Preisspitze (+783 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 2498,
+"R": 315,
+"wert": 329633
 },
 {
 "id": 273103,
 "art": "steigt",
-"text": "Preisspitze (+97 % in 6 Std.) – verkaufen, nicht nachkaufen",
-"p": 149699,
-"R": 29200,
-"wert": 361497
+"text": "Preisspitze (+75 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 137099,
+"R": 29900,
+"wert": 321597
+},
+{
+"id": 8839,
+"art": "faellt",
+"text": "fällt seit 6 Std. (-15 %)",
+"p": 2000,
+"R": 1474,
+"wert": 300346
+},
+{
+"id": 248711,
+"art": "steigt",
+"text": "Preisspitze (+24 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 17294,
+"R": 11574,
+"wert": 297440
+},
+{
+"id": 8396,
+"art": "tief",
+"text": "15 % unter üblich – Kaufchance",
+"p": 23697,
+"R": 27900,
+"wert": 294210
+},
+{
+"id": 248710,
+"art": "steigt",
+"text": "Preisspitze (+22 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 5198,
+"R": 2347,
+"wert": 285100
+},
+{
+"id": 10620,
+"art": "steigt",
+"text": "Preisspitze (+20 % in 6 Std.) – verkaufen, nicht nachkaufen",
+"p": 1944,
+"R": 1775,
+"wert": 277329
 }
 ],
 "auftrag": [
@@ -2931,64 +2931,64 @@
 "id": 12360,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 1943833
+"wert": 1949180
 },
 {
 "id": 15407,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 868592
+"wert": 920108
 },
 {
 "id": 14342,
 "text": "oft billig um 2 Uhr (5 von 7 Tagen)",
 "wann": "2 Uhr",
 "h": 2,
-"wert": 755938
+"wert": 755997
 },
 {
 "id": 16203,
 "text": "oft billig um 19 Uhr (4 von 7 Tagen)",
 "wann": "19 Uhr",
 "h": 19,
-"wert": 748637
+"wert": 746376
 },
 {
 "id": 12363,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 667017
+"wert": 654826
 },
 {
 "id": 16006,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 650665
+"wert": 635244
 },
 {
 "id": 15409,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 604399
+"wert": 619209
 },
 {
 "id": 8170,
 "text": "oft billig um 22 Uhr (4 von 7 Tagen)",
 "wann": "22 Uhr",
 "h": 22,
-"wert": 540193
+"wert": 540335
 },
 {
-"id": 2838,
+"id": 15419,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 497588
+"wert": 451868
 },
 {
-"id": 16204,
+"id": 279966,
 "text": "jetzt suchen – Kaufchance",
 "wann": "jetzt",
-"wert": 451071
+"wert": 444330
 }
 ],
 "regel": {

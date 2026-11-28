@@ -130,7 +130,7 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
         if q >= sta * FLUT and p < R:
             art, txt = "flut", "Markt geflutet (%.1fx üblich) – nicht kaufen" % (q / sta)
         elif p <= R * KAUF_TIEF:
-            art, txt = "tief", "%d %% unter üblich – Kaufchance" % round((1 - p / R) * 100)
+            art, txt = "tief", "%d %% unter üblich – im AH prüfen" % round((1 - p / R) * 100)
         elif q <= sta * LEER and p >= R:
             art, txt = "leer", "fast leergekauft (%d statt %d) – Preisspitze: verkaufen, nicht kaufen" % (q, sta)
         elif tr6 <= -15:
@@ -143,7 +143,7 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
                 blick.append({"id": iid, "art": art, "text": txt, "p": p, "R": int(R), "wert": wert})
         # --- Scan-Auftrag: Tief jetzt, oder Tief kam an >= 3 der letzten 7 Tage zur selben Stunde wieder
         if art == "tief":
-            auftrag.append({"id": iid, "text": "jetzt suchen – Kaufchance", "wann": "jetzt", "wert": int((R * 0.95 - p) * menge)})
+            auftrag.append({"id": iid, "text": "jetzt suchen – war %d %% unter üblich" % round((1 - p / R) * 100), "wann": "jetzt", "wert": int((R * 0.95 - p) * menge)})
         else:
             tage = defaultdict(lambda: 10 ** 12)
             for (uu, pp, *_r) in pkt:

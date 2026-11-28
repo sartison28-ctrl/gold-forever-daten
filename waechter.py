@@ -470,12 +470,16 @@ def zyklen(reihen, jetzt, kenn):
                 continue
             kauf = int(median([e[1] for e in erg]))
             vk = int(median([e[2] for e in treffer] or [e[2] for e in erg]))
+            # Robuste Preise (28.11.): Verkaufspreis nie über 115 % vom echten 7-Tage-Verkaufspreis (kennzahlen vp)
+            vp7 = k.get("vp")
+            if vp7 and vk > vp7 * 1.15:
+                vk = int(vp7 * 1.15)
             vstd = defaultdict(int)
             for e in treffer:
                 vstd[e[3] // 3] += 1
             vb = max(vstd, key=vstd.get) if vstd else None
             gold = int((vk * 0.95 - kauf) * menge * quote)
-            if gold < ZYK_MIN_GOLD:
+            if gold < ZYK_MIN_GOLD or vk * 0.95 < kauf * (1 + ZYK_RENDITE * 0.8):
                 continue
             z = {"id": iid, "kh": [bl * 3, bl * 3 + 3], "vh": [vb * 3, vb * 3 + 3] if vb is not None else None,
                  "tage": len(erg), "treffer": len(treffer), "quote": round(quote * 100), "rendite": round(rend * 100),

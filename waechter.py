@@ -172,6 +172,10 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
     vk = [x for x in verpasst if x["art"] == "kauf"][:25] + [x for x in verpasst if x["art"] == "verk"][:80]
     sig = signale_pruefen(ordner, reihen, jetzt, blick, zus, idx)
     zyk, zyk_gold = zyklen(reihen, jetzt, kenn)
+    try:
+        schatten_handel(ordner, reihen, jetzt, kenn, namen, stamm)
+    except Exception as e:  # nie die Datendatei verhindern
+        print("Schatten-Handel fehlgeschlagen:", e)
     return {"stand": jetzt, "zyklen": zyk, "zyklenGold": zyk_gold, "signale": sig, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "itemseg": itemseg, "blick": blick[:25], "auftrag": auftrag[:10],
             "regel": {"kaufTief": KAUF_TIEF, "verkHoch": VERK_HOCH, "minUmsatz": MIN_UMSATZ, "flut": FLUT}}
 
@@ -475,3 +479,73 @@ def zyklen(reihen, jetzt, kenn):
             out.append(bester)
     out.sort(key=lambda z: -z["gold"])
     return out[:40], sum(z["gold"] for z in out[:40])
+
+
+# ---------------------------------------------------------------- Schatten-Handel (Wunsch Alex 28.11. 08:14: „nicht nur echte
+# Daten, die ich verursacht habe – die unzähligen verpassten Trades der GitHub-Sammlung müssen in die Wochenanalyse“)
+# Spielt die Kaufregel stündlich auf dem GANZEN Markt durch: virtuell kaufen, wenn der Preis X % unter üblich liegt (genug
+# Umsatz, nicht geflutet), virtuell verkaufen zum typischen ECHTEN Verkaufspreis 12–48 Std. später (nach 5 % Gebühr; keine
+# Verkäufe = Verlust zum Mindestpreis). Je Rabatt-Stufe, Markt-Bereich, 3-Std.-Block und Wochentag.
+# Ergebnis daten/<haus>/schatten.json – Beleg für Cloud-Wächter (Lockern auf Probe) und Wochenanalyse (feine Regeln).
+SCHATTEN_STUFEN = [10, 12, 15, 20, 25, 30]
+SCHATTEN_TAGE = 13
+WT_KURZ = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+
+def schatten_handel(ordner, reihen, jetzt, kenn, namen, stamm):
+    ab = jetzt - SCHATTEN_TAGE * 86400
+    ende = jetzt - 48 * 3600                     # Zukunft muss bekannt sein
+    roh = []                                     # (stufe, bereich, block, wt, rendite)
+    for iid, pkt in reihen.items():
+        k = kenn.get(str(iid)) or {}
+        vt = k.get("vt") or 0
+        if vt < MIN_UMSATZ:
+            continue
+        bereich = segment(iid, namen.get(iid), stamm) or "Sonstiges"
+        letzter = {}                             # stufe -> letzte virtuelle Kaufzeit (höchstens alle 12 Std.)
+        for j, x in enumerate(pkt):
+            t, p, q = x[0], x[1], x[2]
+            if t < ab or t > ende:
+                continue
+            vor = [y for y in pkt[max(0, j - 7 * 24):j] if y[0] >= t - 7 * 86400]
+            if len(vor) < 72:
+                continue
+            R = median([y[1] for y in vor])
+            sta = median([y[2] for y in vor]) or 1
+            if R <= 0 or q >= sta * FLUT:
+                continue
+            rab = (1 - p / R) * 100
+            if rab < SCHATTEN_STUFEN[0]:
+                continue
+            danach = [y for y in pkt[j + 1:j + 60] if t + 12 * 3600 <= y[0] <= t + 48 * 3600]
+            verk = [y[4] for y in danach if y[4] > 0 and y[5] > 0]
+            vk = median(verk) if verk else (min(y[1] for y in danach) if danach else p * 0.9)
+            rend = vk * 0.95 / p - 1
+            lok = dt.datetime.fromtimestamp(t, dt.timezone.utc).astimezone(BERLIN)
+            bl = lok.hour // 3 * 3
+            for st in SCHATTEN_STUFEN:
+                if rab >= st and t - letzter.get(st, 0) >= 12 * 3600:
+                    letzter[st] = t
+                    roh.append((st, bereich, bl, WT_KURZ[lok.weekday()], round(rend, 3)))
+    def auswerten(schluessel):
+        g = defaultdict(list)
+        for r in roh:
+            g[schluessel(r)].append(r[4])
+        out = []
+        for key, v in g.items():
+            if len(v) < 5:
+                continue
+            out.append({"k": key, "n": len(v), "quote": round(sum(1 for x in v if x > 0.02) / len(v) * 100),
+                        "rendite": round(median(v) * 100, 1)})
+        return out
+    erg = {
+        "stand": jetzt, "tage": SCHATTEN_TAGE, "trades": len(roh),
+        "stufe": sorted(auswerten(lambda r: r[0]), key=lambda x: x["k"]),
+        "bereich": sorted(auswerten(lambda r: "%s|%d" % (r[1], r[0])), key=lambda x: (-x["n"])),
+        "bereichZeit": sorted([x for x in auswerten(lambda r: "%s|%d|%d" % (r[1], r[2], r[0])) if x["n"] >= 10], key=lambda x: (-x["quote"], -x["n"]))[:150],
+        "wochentag": sorted(auswerten(lambda r: "%s|%d" % (r[3], r[0])), key=lambda x: x["k"]),
+        "erklaerung": "k = Bereich|Uhrzeit-Block (Start)|Rabatt-Stufe; quote = Anteil mit > 2 % Gewinn nach Gebühr; rendite = Median",
+    }
+    with open(os.path.join(ordner, "schatten.json"), "w", encoding="utf-8") as f:
+        json.dump(erg, f, ensure_ascii=False, separators=(",", ":"))
+    return erg

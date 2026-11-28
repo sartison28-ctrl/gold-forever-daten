@@ -452,7 +452,14 @@ def zyklen(reihen, jetzt, kenn):
                 spaeter = [(u, v) for (u, v) in verk if t + 2 * 3600 <= u <= t + 24 * 3600]
                 if not spaeter:
                     continue
-                u, v = max(spaeter, key=lambda z: z[1])
+                # 28.11. (Goldene Perle: „verkaufen für ~2g 26c“ bei üblich 1g 37c): nicht der eine teuerste Verkauf,
+                # sondern der Median im besten 3-Std.-Block – ein Preis, der eine Weile hält und sich wirklich verkauft
+                bl3 = defaultdict(list)
+                for (uu, vv) in spaeter:
+                    bl3[_std(uu) // 3].append((uu, vv))
+                best = max(bl3.values(), key=lambda l: median([x[1] for x in l]))
+                v = median([x[1] for x in best])
+                u = best[len(best) // 2][0]
                 erg.append((v * 0.95 / p - 1, p, v, _std(u)))
             if len(erg) < ZYK_MIN_TAGE:
                 continue

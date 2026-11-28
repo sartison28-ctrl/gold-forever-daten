@@ -171,7 +171,8 @@ def rechnen(ordner, ids, kenn, namen=None, stamm=None):
     # Verkaufs-Hochs: mehr behalten – das Addon filtert auf die eigene Ware
     vk = [x for x in verpasst if x["art"] == "kauf"][:25] + [x for x in verpasst if x["art"] == "verk"][:80]
     sig = signale_pruefen(ordner, reihen, jetzt, blick, zus, idx)
-    return {"stand": jetzt, "signale": sig, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "itemseg": itemseg, "blick": blick[:25], "auftrag": auftrag[:10],
+    zyk, zyk_gold = zyklen(reihen, jetzt, kenn)
+    return {"stand": jetzt, "zyklen": zyk, "zyklenGold": zyk_gold, "signale": sig, "verpasst": vk, "segmente": seg, "zusammenhang": zus, "itemseg": itemseg, "blick": blick[:25], "auftrag": auftrag[:10],
             "regel": {"kaufTief": KAUF_TIEF, "verkHoch": VERK_HOCH, "minUmsatz": MIN_UMSATZ, "flut": FLUT}}
 
 
@@ -401,3 +402,76 @@ def signale_pruefen(ordner, reihen, jetzt, blick, zus, idx):
                     "aenderung": round(median(g["werte"]), 1) if g["werte"] else None}
     out["offen"] = sum(1 for e in log if e[5] is None)
     return out
+
+
+# ---------------------------------------------------------------- Zyklen: billig kaufen -> später teuer verkaufen (Wunsch Alex
+# 28.11. 07:52: „um 22 Uhr Preistief, ab 6 Uhr Preishoch und ich war nicht online – wie stark fließt das ein?“)
+# Je Item und 3-Stunden-Block: an wie vielen der letzten 14 Tage war der billigste Preis im Block so tief, dass innerhalb der
+# nächsten 24 Std. ECHTE Verkäufe (geschätzter Verkaufspreis der Stunde) nach 5 % Gebühr >= 10 % Gewinn brachten?
+# Ergebnis = Fahrplan „kaufen 21–24 Uhr, verkaufen 6–9 Uhr“ inkl. Trefferquote und Gold pro Tag. Weil Auktionen 24 Std. laufen,
+# lässt sich so ein Zyklus auch offline nutzen: abends kaufen, sofort zum Zielpreis einstellen.
+ZYK_MIN_TAGE = 7
+ZYK_QUOTE = 0.6
+ZYK_RENDITE = 0.10
+ZYK_MIN_GOLD = 5000      # 50s pro Tag (erwartet)
+
+
+def zyklen(reihen, jetzt, kenn):
+    out = []
+    ab = jetzt - 14 * 86400
+    for iid, pkt in reihen.items():
+        k = kenn.get(str(iid)) or {}
+        vt = k.get("vt") or 0
+        if vt < 50:
+            continue
+        pk = [x for x in pkt if x[0] >= ab]
+        if len(pk) < 24 * ZYK_MIN_TAGE:
+            continue
+        verk = [(x[0], x[4]) for x in pk if x[4] > 0 and x[5] > 0]
+        if len(verk) < 10:
+            continue
+        bloecke = defaultdict(dict)   # block -> tag -> (kaufpreis, zeit)
+        for x in pk:
+            lok = dt.datetime.fromtimestamp(x[0], dt.timezone.utc).astimezone(BERLIN)
+            bl = lok.hour // 3
+            tag = lok.strftime("%Y-%m-%d")
+            alt = bloecke[bl].get(tag)
+            if not alt or x[1] < alt[0]:
+                bloecke[bl][tag] = (x[1], x[0])
+        menge = max(1, int(vt * 0.05))
+        bester = None
+        for bl, tage in bloecke.items():
+            erg = []
+            for tag, (p, t) in tage.items():
+                if t > jetzt - 24 * 3600:
+                    continue            # Zukunft noch nicht bekannt
+                spaeter = [(u, v) for (u, v) in verk if t + 2 * 3600 <= u <= t + 24 * 3600]
+                if not spaeter:
+                    continue
+                u, v = max(spaeter, key=lambda z: z[1])
+                erg.append((v * 0.95 / p - 1, p, v, _std(u)))
+            if len(erg) < ZYK_MIN_TAGE:
+                continue
+            treffer = [e for e in erg if e[0] >= ZYK_RENDITE]
+            quote = len(treffer) / len(erg)
+            rend = median([e[0] for e in erg])
+            if quote < ZYK_QUOTE or rend < ZYK_RENDITE * 0.8:
+                continue
+            kauf = int(median([e[1] for e in erg]))
+            vk = int(median([e[2] for e in treffer] or [e[2] for e in erg]))
+            vstd = defaultdict(int)
+            for e in treffer:
+                vstd[e[3] // 3] += 1
+            vb = max(vstd, key=vstd.get) if vstd else None
+            gold = int((vk * 0.95 - kauf) * menge * quote)
+            if gold < ZYK_MIN_GOLD:
+                continue
+            z = {"id": iid, "kh": [bl * 3, bl * 3 + 3], "vh": [vb * 3, vb * 3 + 3] if vb is not None else None,
+                 "tage": len(erg), "treffer": len(treffer), "quote": round(quote * 100), "rendite": round(rend * 100),
+                 "kaufBis": kauf, "verkauf": vk, "menge": menge, "gold": gold}
+            if not bester or z["gold"] > bester["gold"]:
+                bester = z
+        if bester:
+            out.append(bester)
+    out.sort(key=lambda z: -z["gold"])
+    return out[:40], sum(z["gold"] for z in out[:40])
